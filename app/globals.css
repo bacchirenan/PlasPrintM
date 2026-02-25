@@ -1674,17 +1674,14 @@ tbody td {
 /* ============================================================
    RESPONSIVIDADE (Mobile & Tablet)
    ============================================================ */
-@media (max-width: 1024px) {
+@media (max-width: 1200px) {
   .page-content {
-    padding: 20px 24px;
+    padding: 16px;
   }
 
   .card {
-    padding: 20px;
+    padding: 16px;
   }
-}
-
-@media (max-width: 768px) {
 
   /* Header Adjustments */
   .mobile-menu-toggle {
@@ -1693,10 +1690,12 @@ tbody td {
 
   .header {
     padding: 0 16px;
+    gap: 12px;
   }
 
   .header-left h2 {
     font-size: 16px;
+    line-height: 1.2;
   }
 
   .header-left p {
@@ -1710,14 +1709,16 @@ tbody td {
   }
 
   .role-badge {
-    display: none;
     /* Hide role on mobile to save space */
+    display: none !important;
   }
 
   /* Sidebar Drawer */
   .sidebar {
     transform: translateX(-100%);
     box-shadow: var(--shadow-lg);
+    background: rgba(4, 12, 28, 0.95);
+    /* Menor transparência no mobile */
   }
 
   .sidebar.open {
@@ -1726,15 +1727,6 @@ tbody td {
 
   .main-content {
     margin-left: 0;
-  }
-
-  /* Layout and Cards */
-  .page-content {
-    padding: 16px;
-  }
-
-  .card {
-    padding: 16px;
   }
 
   /* Form Grids */
