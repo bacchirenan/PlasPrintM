@@ -110,7 +110,7 @@ export const RATING_LABELS: Record<Rating, string> = {
   otimo: 'Ótimo',
 }
 
-export const MACHINE_NUMBERS = ['28', '29', '180', '181', '182']
+export const MACHINE_NUMBERS = ['28', '29', '180', '181', '182', 'ENCAB_CANUDOS']
 
 export interface InventoryItem {
   id: string

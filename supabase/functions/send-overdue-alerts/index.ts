@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
 
         // 2. Agrupar itens por máquina
         const groupedByMachine = overdueItems.reduce((acc: any, item: any) => {
-            const machine = item.machine_name || `Máquina ${item.machine_number}`
+            const machine = item.machine_type === 'room' || isNaN(Number(item.machine_number)) ? item.machine_name : `Máquina ${item.machine_number}`
             if (!acc[machine]) acc[machine] = []
             acc[machine].push(item)
             return acc

@@ -63,7 +63,7 @@ export default function TintasPage() {
                 initialItems={items}
                 category="tinta"
                 userRole={profile?.role}
-                viewMode="inventory"
+                viewMode="both"
             />
         </div>
     )

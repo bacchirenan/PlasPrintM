@@ -335,7 +335,7 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                             // Opcional: manter a sub-aba ativa ao trocar de máquina
                         }}
                     >
-                        {machine.type === 'room' ? machine.name : `Máquina ${machine.number}`}
+                        {machine.type === 'room' || isNaN(Number(machine.number)) ? machine.name : `Máquina ${machine.number}`}
                     </button>
                 ))}
             </div>
@@ -586,7 +586,7 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                         </div>
                         <div className="modal-body">
                             <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                                {editingId ? 'Atualize os detalhes do registro.' : `Selecione o tipo e descreva o que aconteceu na ${currentMachine?.type === 'room' ? currentMachine.name : `Máquina ${currentMachine?.number}`}.`}
+                                {editingId ? 'Atualize os detalhes do registro.' : `Selecione o tipo e descreva o que aconteceu na ${currentMachine?.type === 'room' || isNaN(Number(currentMachine?.number)) ? currentMachine?.name : `Máquina ${currentMachine?.number}`}.`}
                             </p>
 
                             <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase' }}>

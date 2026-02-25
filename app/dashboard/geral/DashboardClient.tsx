@@ -114,7 +114,7 @@ export function DashboardClient({ machines, items, logs, inventory }: DashboardC
                         <div key={machine.id} className="card dashboard-machine-card" style={{ padding: '20px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                                 <div style={{ fontSize: '18px', fontWeight: 800 }}>
-                                    {machine.type === 'room' ? machine.name : `Máquina ${machine.number}`}
+                                    {machine.type === 'room' || isNaN(Number(machine.number)) ? machine.name : `Máquina ${machine.number}`}
                                 </div>
                                 <div style={{
                                     padding: '4px 10px',

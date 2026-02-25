@@ -41,7 +41,14 @@ export default async function HistoricoPage() {
     const sortedMachines = (machines || []).sort((a, b) => {
         if (a.type === 'room') return 1
         if (b.type === 'room') return -1
-        return parseInt(a.number) - parseInt(b.number)
+        const valA = parseInt(a.number)
+        const valB = parseInt(b.number)
+
+        if (isNaN(valA) && isNaN(valB)) return a.name.localeCompare(b.name)
+        if (isNaN(valA)) return 1
+        if (isNaN(valB)) return -1
+
+        return valA - valB
     })
 
     return (

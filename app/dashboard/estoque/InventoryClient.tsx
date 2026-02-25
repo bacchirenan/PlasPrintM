@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/ToastProvider'
 import type { InventoryItem } from '@/lib/types'
@@ -9,7 +9,7 @@ interface InventoryClientProps {
     initialItems: InventoryItem[]
     category: 'peca' | 'tinta'
     userRole?: string
-    viewMode?: 'inventory' | 'planning' | 'both'
+    viewMode?: 'inventory' | 'planning' | 'both' | 'withdrawals'
 }
 
 export function InventoryClient({ initialItems, category, userRole, viewMode = 'both' }: InventoryClientProps) {
@@ -25,6 +25,22 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
     const [editForm, setEditForm] = useState<Partial<InventoryItem>>({})
     const [isWithdrawing, setIsWithdrawing] = useState(false)
     const [withdrawals, setWithdrawals] = useState([{ itemId: '', bottles: 1 }])
+    const [withdrawalHistory, setWithdrawalHistory] = useState<any[]>([])
+    const [editingHistoryId, setEditingHistoryId] = useState<string | null>(null)
+    const [historyEditForm, setHistoryEditForm] = useState<any>({})
+
+    useEffect(() => {
+        if (category === 'tinta') {
+            const fetchHistory = async () => {
+                const { data } = await supabase
+                    .from('ink_withdrawals')
+                    .select('*, inventory_items(name, code)')
+                    .order('created_at', { ascending: false })
+                if (data) setWithdrawalHistory(data)
+            }
+            fetchHistory()
+        }
+    }, [category, supabase])
 
     const filteredItems = useMemo(() => {
         return items.filter(item =>
@@ -198,13 +214,62 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                 continue
             }
 
-            // 1. Registrar a retirada no log
-            const { error: logError } = await supabase
+            let updatedConsumption = item.daily_consumption
+
+            // 1. Lógica de fechamento da retirada anterior
+            const { data: previousWithdrawals } = await supabase
+                .from('ink_withdrawals')
+                .select('*')
+                .eq('item_id', item.id)
+                .is('closed_at', null)
+                .order('created_at', { ascending: false })
+                .limit(1)
+
+            if (previousWithdrawals && previousWithdrawals.length > 0) {
+                const prev = previousWithdrawals[0]
+                const startDate = new Date(prev.created_at)
+                const endDate = new Date()
+
+                let daysDiff = 0
+                const current = new Date(startDate)
+                current.setHours(0, 0, 0, 0)
+                const end = new Date(endDate)
+                end.setHours(0, 0, 0, 0)
+
+                // Ignorar domingos e calcular os dias
+                while (current <= end) {
+                    if (current.getDay() !== 0) {
+                        daysDiff++
+                    }
+                    current.setDate(current.getDate() + 1)
+                }
+
+                if (daysDiff === 0) daysDiff = 1 // Evitar divisão por 0
+
+                const newConsumption = Math.round((prev.quantity_liters * 1000) / daysDiff)
+                updatedConsumption = newConsumption
+
+                await supabase.from('ink_withdrawals')
+                    .update({
+                        closed_at: endDate.toISOString(),
+                        consumption_per_day_ml: newConsumption
+                    })
+                    .eq('id', prev.id)
+
+                await supabase.from('inventory_items')
+                    .update({ daily_consumption: updatedConsumption })
+                    .eq('id', item.id)
+            }
+
+            // 2. Registrar a nova retirada
+            const { data: newLog, error: logError } = await supabase
                 .from('ink_withdrawals')
                 .insert({
                     item_id: item.id,
                     quantity_liters: withdrawal.bottles
                 })
+                .select('*, inventory_items(name, code)')
+                .single()
 
             if (logError) {
                 showToast(`Erro ao registrar retirada para ${item.name}.`, 'error')
@@ -212,7 +277,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                 continue
             }
 
-            // 2. Dar baixa no estoque
+            // 3. Dar baixa no estoque
             const newQty = item.quantity - withdrawal.bottles
             const { error: stockError } = await supabase
                 .from('inventory_items')
@@ -225,31 +290,17 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                 continue
             }
 
-            // 3. Cálculo de Consumo Médio (ml/dia)
-            const { data: withdrawalsList } = await supabase
-                .from('ink_withdrawals')
-                .select('created_at')
-                .eq('item_id', item.id)
-                .order('created_at', { ascending: false })
-                .limit(2)
-
-            let updatedConsumption = item.daily_consumption
-
-            if (withdrawalsList && withdrawalsList.length === 2) {
-                const last = new Date(withdrawalsList[0].created_at)
-                const secondToLast = new Date(withdrawalsList[1].created_at)
-                const diffTime = Math.abs(last.getTime() - secondToLast.getTime())
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-
-                if (diffDays > 0) {
-                    updatedConsumption = Math.round((withdrawal.bottles * 1000) / diffDays)
-
-                    await supabase
-                        .from('inventory_items')
-                        .update({ daily_consumption: updatedConsumption })
-                        .eq('id', item.id)
-                }
-            }
+            // Atualiza o state de History
+            setWithdrawalHistory(prevHist => {
+                const updated = prevHist.map(h => {
+                    if (previousWithdrawals && previousWithdrawals.length > 0 && h.id === previousWithdrawals[0].id) {
+                        return { ...h, closed_at: new Date().toISOString(), consumption_per_day_ml: updatedConsumption }
+                    }
+                    return h;
+                })
+                if (newLog) return [newLog, ...updated]
+                return updated
+            })
 
             updatedItems[itemIndex] = { ...item, quantity: newQty, daily_consumption: updatedConsumption }
         }
@@ -262,6 +313,49 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
             setWithdrawals([{ itemId: '', bottles: 1 }])
             showToast('Retiradas registradas e estoque atualizado!', 'success')
         }
+    }
+
+    const handleDeleteHistory = async (id: string) => {
+        if (!confirm('Deseja realmente apagar este registro de histórico? Isto não devolverá a tinta ao estoque principal.')) return
+        setLoading(id)
+        const { error } = await supabase.from('ink_withdrawals').delete().eq('id', id)
+        setLoading(null)
+        if (error) {
+            showToast('Erro ao apagar histórico.', 'error')
+            return
+        }
+        setWithdrawalHistory(prev => prev.filter(h => h.id !== id))
+        showToast('Registro apagado.', 'success')
+    }
+
+    const handleSaveHistoryEdit = async () => {
+        if (!editingHistoryId) return
+        setLoading(editingHistoryId)
+
+        const payload: any = {
+            quantity_liters: historyEditForm.quantity_liters,
+            created_at: historyEditForm.created_at,
+        }
+        if (historyEditForm.closed_at !== undefined) payload.closed_at = historyEditForm.closed_at
+        if (historyEditForm.consumption_per_day_ml !== undefined) payload.consumption_per_day_ml = historyEditForm.consumption_per_day_ml
+
+        const { error } = await supabase
+            .from('ink_withdrawals')
+            .update(payload)
+            .eq('id', editingHistoryId)
+
+        setLoading(null)
+
+        if (error) {
+            showToast('Erro ao salvar histórico.', 'error')
+            return
+        }
+
+        setWithdrawalHistory(prev => prev.map(h =>
+            h.id === editingHistoryId ? { ...h, ...payload } : h
+        ))
+        setEditingHistoryId(null)
+        showToast('Registro atualizado.', 'success')
     }
 
     return (
@@ -280,16 +374,16 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                         />
                         <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
                     </div>
-                    {viewMode === 'planning' && (
+                    {viewMode === 'withdrawals' && (
                         <button
                             className="btn btn-primary"
                             style={{ background: 'var(--success)', borderColor: 'var(--success)' }}
                             onClick={() => setIsWithdrawing(true)}
                         >
-                            🧪 Registrar Retirada
+                            Registrar Retirada
                         </button>
                     )}
-                    {viewMode !== 'planning' && (
+                    {(viewMode === 'inventory' || viewMode === 'both') && (
                         <button
                             className="btn btn-primary"
                             onClick={() => {
@@ -303,8 +397,8 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                 </div>
             </div>
 
-            {/* Tabela de Planejamento (Apenas para Tintas) */}
-            {category === 'tinta' && viewMode !== 'inventory' && filteredItems.length > 0 && (
+            {/* Tabela de Planejamento (Apenas para Tintas, visão Both ou Planning) */}
+            {category === 'tinta' && (viewMode === 'both' || viewMode === 'planning') && filteredItems.length > 0 && (
                 <div className="card" style={{ marginBottom: '24px', padding: 0, overflow: 'hidden' }}>
                     <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', background: 'rgba(58, 134, 255, 0.05)' }}>
                         <h3 style={{ fontSize: '16px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -343,7 +437,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                                 <input
                                                     type="number"
                                                     className="observation-input"
-                                                    style={{ margin: 0, padding: '4px 8px', width: '70px', textAlign: 'center', fontSize: '13px', opacity: isAdmin ? 1 : 0.6 }}
+                                                    style={{ margin: 0, padding: '4px', width: '55px', textAlign: 'center', fontSize: '13px', opacity: isAdmin ? 1 : 0.6 }}
                                                     defaultValue={item.daily_consumption || 0}
                                                     onBlur={e => {
                                                         if (!isAdmin) return
@@ -393,8 +487,48 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                 </div>
             )}
 
+            {/* Histórico de Retiradas */}
+            {category === 'tinta' && viewMode === 'withdrawals' && (
+                <div className="card" style={{ marginBottom: '24px', padding: 0, overflow: 'hidden' }}>
+                    <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', background: 'rgba(58, 134, 255, 0.05)' }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            📋 Histórico de Retiradas e Consumo
+                        </h3>
+                    </div>
+                    <div style={{ overflowX: 'auto', maxHeight: '400px' }}>
+                        <table className="inventory-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--card-bg)' }}>
+                                <tr style={{ background: 'rgba(255,255,255,0.02)', textAlign: 'left' }}>
+                                    <th style={{ padding: '12px 20px', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Código</th>
+                                    <th style={{ padding: '12px 20px', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Tinta</th>
+                                    <th style={{ padding: '12px 20px', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Qtd (L)</th>
+                                    <th style={{ padding: '12px 20px', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Data Retirada</th>
+                                    <th style={{ padding: '12px 20px', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Data Fechamento</th>
+                                    <th style={{ padding: '12px 20px', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Média de Consumo (ml/dia)</th>
+                                    <th style={{ padding: '12px 20px', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Status</th>
+                                    {isAdmin && <th style={{ padding: '12px 20px', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Ações</th>}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {withdrawalHistory.map(hist => (
+                                    <tr key={hist.id} style={{ borderTop: '1px solid var(--border)' }}>
+                                        <td style={{ padding: '12px 20px', fontSize: '13px', color: 'var(--text-secondary)' }}>{hist.inventory_items?.code || '—'}</td>
+                                        <td style={{ padding: '12px 20px', fontSize: '13px', fontWeight: 600 }}>{hist.inventory_items?.name || 'Tinta Excluída'}</td>
+                                        <td style={{ padding: '12px 20px', fontSize: '13px', textAlign: 'center', fontWeight: 700 }}>{hist.quantity_liters} L</td>
+                                        <td style={{ padding: '12px 20px', fontSize: '13px', textAlign: 'center' }}>{new Date(hist.created_at).toLocaleString('pt-BR')}</td>
+                                        <td style={{ padding: '12px 20px', fontSize: '13px', textAlign: 'center', color: hist.closed_at ? 'inherit' : 'var(--text-muted)' }}>
+                                            {hist.closed_at ? new Date(hist.closed_at).toLocaleString('pt-BR') : 'Aguardando próxima retirada'}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
             {/* Listagem */}
-            {viewMode !== 'planning' && (
+            {(viewMode === 'inventory' || viewMode === 'both') && (
                 <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
                     <div style={{ overflowX: 'auto' }}>
                         <table className="inventory-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -503,7 +637,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                 }}>
                     <div className="card" style={{ width: '100%', maxWidth: '500px', padding: '24px' }}>
                         <h3 style={{ marginBottom: '20px' }}>{isAdding ? `Cadastrar Nova ${category === 'tinta' ? 'Tinta' : 'Peça'}` : 'Editar Item'}</h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
                             {/* Upload de Imagem (Apenas para Peças) */}
                             {category === 'peca' && (
                                 <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '8px' }}>
@@ -626,7 +760,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                 }}>
                     <div className="card" style={{ width: '100%', maxWidth: '450px', padding: '24px' }}>
                         <h3 style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            🧪 Registrar Retirada de Tintas
+                            Registrar Retirada de Tintas
                         </h3>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto', paddingRight: '8px' }}>
@@ -715,6 +849,74 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                 disabled={loading === 'withdrawing' || !withdrawals.some(w => w.itemId)}
                             >
                                 {loading === 'withdrawing' ? 'Processando...' : 'Confirmar Tudo'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Edição de Histórico (Apenas Admin) */}
+            {editingHistoryId && isAdmin && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    zIndex: 1000, backdropFilter: 'blur(4px)'
+                }}>
+                    <div className="card" style={{ width: '100%', maxWidth: '400px', padding: '24px' }}>
+                        <h3 style={{ marginBottom: '20px' }}>Editar Histórico</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div>
+                                <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Quantidade (Litros)</label>
+                                <input
+                                    type="number"
+                                    step="0.1"
+                                    className="observation-input"
+                                    style={{ margin: 0 }}
+                                    value={historyEditForm.quantity_liters || 0}
+                                    onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, quantity_liters: parseFloat(e.target.value) || 0 }))}
+                                />
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Data de Retirada</label>
+                                <input
+                                    type="datetime-local"
+                                    className="observation-input"
+                                    style={{ margin: 0 }}
+                                    value={historyEditForm.created_at || ''}
+                                    onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, created_at: e.target.value }))}
+                                />
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Data de Fechamento</label>
+                                <input
+                                    type="datetime-local"
+                                    className="observation-input"
+                                    style={{ margin: 0 }}
+                                    value={historyEditForm.closed_at || ''}
+                                    onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, closed_at: e.target.value || null }))}
+                                />
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>Deixe vazio se o ciclo ainda estiver "Aberto".</span>
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Média de Consumo (ml/dia)</label>
+                                <input
+                                    type="number"
+                                    step="1"
+                                    className="observation-input"
+                                    style={{ margin: 0 }}
+                                    value={historyEditForm.consumption_per_day_ml || ''}
+                                    onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, consumption_per_day_ml: e.target.value ? parseFloat(e.target.value) : null }))}
+                                />
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                            <button className="btn btn-ghost" onClick={() => setEditingHistoryId(null)}>Cancelar</button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={handleSaveHistoryEdit}
+                                disabled={loading === editingHistoryId}
+                            >
+                                {loading === editingHistoryId ? 'Salvando...' : 'Salvar'}
                             </button>
                         </div>
                     </div>

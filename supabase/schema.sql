@@ -52,14 +52,15 @@ CREATE POLICY "Todos os usuários autenticados podem ver máquinas"
   ON public.machines FOR SELECT
   TO authenticated USING (TRUE);
 
--- Seeds: 5 máquinas
+-- Seeds: 6 máquinas + 1 Sala
 INSERT INTO public.machines (name, number) VALUES
   ('Máquina 28', '28'),
   ('Máquina 29', '29'),
   ('Máquina 180', '180'),
   ('Máquina 181', '181'),
   ('Máquina 182', '182'),
-  ('Sala de Impressão', 'SALA', 'room')
+  ('Encabeçadora de Canudos', 'ENCAB_CANUDOS'),
+  ('Sala de Impressão', 'SALA') -- Tipo atualizado no on conflict
 ON CONFLICT (number) DO UPDATE SET type = EXCLUDED.type;
 
 -- ============================================================

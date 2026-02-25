@@ -52,6 +52,7 @@ const NAV_ITEMS = [
                     </svg>
                 ),
             },
+
             {
                 href: '/dashboard/consumo-tintas',
                 label: 'Consumo de Tintas',

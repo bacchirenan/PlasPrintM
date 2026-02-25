@@ -43,7 +43,7 @@ export default function ConsumoTintasPage() {
     if (loading) {
         return (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text-primary)' }}>
-                Carregando planejamento de consumo...
+                Carregando consumo de tintas...
             </div>
         )
     }
@@ -52,10 +52,10 @@ export default function ConsumoTintasPage() {
         <div style={{ padding: '24px' }}>
             <div style={{ marginBottom: '32px' }}>
                 <h2 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px' }}>
-                    Planejamento de Consumo de Tintas
+                    Consumo de Tintas
                 </h2>
                 <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
-                    Monitore a projeção de uso, cobertura de estoque e alertas de reposição (ml/Litros).
+                    Registre as retiradas de tinta e acompanhe o histórico de uso.
                 </p>
             </div>
 
@@ -63,7 +63,7 @@ export default function ConsumoTintasPage() {
                 initialItems={items}
                 category="tinta"
                 userRole={profile?.role}
-                viewMode="planning"
+                viewMode="withdrawals"
             />
         </div>
     )

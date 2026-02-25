@@ -262,7 +262,7 @@ export function ChecklistClient({
             }}>
                 <SummaryCard
                     label="Local selecionado"
-                    value={currentMachine ? (currentMachine.type === 'room' ? currentMachine.name : `Máquina ${currentMachine.number}`) : '—'}
+                    value={currentMachine ? (currentMachine.type === 'room' || isNaN(Number(currentMachine.number)) ? currentMachine.name : `Máquina ${currentMachine.number}`) : '—'}
                     icon={currentMachine?.type === 'room' ? "🏠" : "🏭"}
                     color="var(--primary-accent)"
                 />
@@ -304,7 +304,7 @@ export function ChecklistClient({
                             onClick={() => setActiveMachine(machine.id)}
                             id={`tab-machine-${machine.number}`}
                         >
-                            {machine.type === 'room' ? machine.name : `Máquina ${machine.number}`}
+                            {machine.type === 'room' || isNaN(Number(machine.number)) ? machine.name : `Máquina ${machine.number}`}
                         </button>
                     )
                 })}

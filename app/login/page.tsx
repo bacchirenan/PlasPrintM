@@ -208,19 +208,6 @@ export default function LoginPage() {
                     </button>
                 </form>
 
-                {/* Footer */}
-                <div style={{
-                    marginTop: '28px',
-                    padding: '16px',
-                    background: 'rgba(82, 183, 136, 0.05)',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-card)',
-                    textAlign: 'center',
-                }}>
-                    <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                        Problemas de acesso? Contate o administrador do sistema.
-                    </p>
-                </div>
 
                 {/* Versão */}
                 <p style={{

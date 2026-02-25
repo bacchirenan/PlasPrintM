@@ -20,6 +20,20 @@ export default async function GeralDashboardPage() {
         supabase.from('inventory_items').select('*')
     ])
 
+    const sortedMachines = ((machines as Machine[]) || []).sort((a, b) => {
+        if (a.type === 'room') return 1
+        if (b.type === 'room') return -1
+
+        const valA = parseInt(a.number)
+        const valB = parseInt(b.number)
+
+        if (isNaN(valA) && isNaN(valB)) return a.name.localeCompare(b.name)
+        if (isNaN(valA)) return 1
+        if (isNaN(valB)) return -1
+
+        return valA - valB
+    })
+
     return (
         <div className="page-container">
             <header className="page-header">
@@ -30,7 +44,7 @@ export default async function GeralDashboardPage() {
             </header>
 
             <DashboardClient
-                machines={(machines as Machine[]) || []}
+                machines={sortedMachines}
                 items={(items as MaintenanceItem[]) || []}
                 logs={(logs as MaintenanceLog[]) || []}
                 inventory={(inventory as InventoryItem[]) || []}

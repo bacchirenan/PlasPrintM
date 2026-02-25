@@ -61,22 +61,7 @@ export function Header({ profile }: HeaderProps) {
                 </div>
             </div>
             <div className="header-right">
-                {/* Badge de role do usuário */}
-                {(profile.role === 'master' || profile.role === 'admin') && (
-                    <span className="role-badge" style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        padding: '4px 10px',
-                        borderRadius: '20px',
-                        background: 'rgba(82, 183, 136, 0.15)',
-                        color: 'var(--primary-accent)',
-                        border: '1px solid rgba(82, 183, 136, 0.3)',
-                        letterSpacing: '0.5px',
-                        textTransform: 'uppercase',
-                    }}>
-                        {profile.role === 'master' ? '⭐ Master' : '🔧 Admin'}
-                    </span>
-                )}
+
 
             </div>
         </header>
