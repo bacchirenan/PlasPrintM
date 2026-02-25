@@ -1670,3 +1670,118 @@ tbody td {
 .btn-secondary:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.08);
 }
+
+/* ============================================================
+   RESPONSIVIDADE (Mobile & Tablet)
+   ============================================================ */
+@media (max-width: 1024px) {
+  .page-content {
+    padding: 20px 24px;
+  }
+
+  .card {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+
+  /* Header Adjustments */
+  .mobile-menu-toggle {
+    display: flex !important;
+  }
+
+  .header {
+    padding: 0 16px;
+  }
+
+  .header-left h2 {
+    font-size: 16px;
+  }
+
+  .header-left p {
+    display: none;
+    /* Hide subtitle to save space */
+  }
+
+  .header-date {
+    display: none;
+    /* Hide date to save space */
+  }
+
+  .role-badge {
+    display: none;
+    /* Hide role on mobile to save space */
+  }
+
+  /* Sidebar Drawer */
+  .sidebar {
+    transform: translateX(-100%);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .main-content {
+    margin-left: 0;
+  }
+
+  /* Layout and Cards */
+  .page-content {
+    padding: 16px;
+  }
+
+  .card {
+    padding: 16px;
+  }
+
+  /* Form Grids */
+  .add-item-form {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Tables */
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .machines-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .machine-tab {
+    white-space: nowrap;
+  }
+
+  /* Checklist */
+  .checklist-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .custom-checkbox {
+    margin-bottom: 12px;
+  }
+
+  .master-fields {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rating-group {
+    justify-content: center;
+    margin-bottom: 12px;
+  }
+
+  /* Modals */
+  .modal-wrapper>.card {
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+}
