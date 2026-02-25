@@ -174,82 +174,94 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
     }
 
     const handleRegisterWithdrawal = async () => {
-        if (!withdrawalForm.itemId || withdrawalForm.bottles <= 0) {
-            showToast('Selecione uma tinta e a quantidade.', 'error')
-            return
-        }
+        const validWithdrawals = withdrawals.filter(w => w.itemId && w.bottles > 0)
 
-        const item = items.find(i => i.id === withdrawalForm.itemId)
-        if (!item) return
-
-        if (item.quantity < withdrawalForm.bottles) {
-            showToast('Estoque insuficiente.', 'error')
+        if (validWithdrawals.length === 0) {
+            showToast('Selecione pelo menos uma tinta e a quantidade.', 'error')
             return
         }
 
         setLoading('withdrawing')
 
-        // 1. Registrar a retirada no log
-        const { error: logError } = await supabase
-            .from('ink_withdrawals')
-            .insert({
-                item_id: item.id,
-                quantity_liters: withdrawalForm.bottles
-            })
+        let hasError = false
+        const updatedItems = [...items]
 
-        if (logError) {
-            showToast('Erro ao registrar retirada.', 'error')
-            setLoading(null)
-            return
-        }
+        for (const withdrawal of validWithdrawals) {
+            const itemIndex = updatedItems.findIndex(i => i.id === withdrawal.itemId)
+            if (itemIndex === -1) continue
 
-        // 2. Dar baixa no estoque
-        const newQty = item.quantity - withdrawalForm.bottles
-        const { error: stockError } = await supabase
-            .from('inventory_items')
-            .update({ quantity: newQty })
-            .eq('id', item.id)
+            const item = updatedItems[itemIndex]
 
-        if (stockError) {
-            showToast('Erro ao atualizar estoque.', 'error')
-            setLoading(null)
-            return
-        }
-
-        // 3. Cálculo de Consumo Médio (ml/dia)
-        const { data: withdrawals } = await supabase
-            .from('ink_withdrawals')
-            .select('created_at')
-            .eq('item_id', item.id)
-            .order('created_at', { ascending: false })
-            .limit(2)
-
-        let updatedConsumption = item.daily_consumption
-
-        if (withdrawals && withdrawals.length === 2) {
-            const last = new Date(withdrawals[0].created_at)
-            const secondToLast = new Date(withdrawals[1].created_at)
-            const diffTime = Math.abs(last.getTime() - secondToLast.getTime())
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-
-            if (diffDays > 0) {
-                updatedConsumption = Math.round((withdrawalForm.bottles * 1000) / diffDays)
-
-                await supabase
-                    .from('inventory_items')
-                    .update({ daily_consumption: updatedConsumption })
-                    .eq('id', item.id)
+            if (item.quantity < withdrawal.bottles) {
+                showToast(`Estoque insuficiente para a tinta ${item.name}.`, 'error')
+                hasError = true
+                continue
             }
+
+            // 1. Registrar a retirada no log
+            const { error: logError } = await supabase
+                .from('ink_withdrawals')
+                .insert({
+                    item_id: item.id,
+                    quantity_liters: withdrawal.bottles
+                })
+
+            if (logError) {
+                showToast(`Erro ao registrar retirada para ${item.name}.`, 'error')
+                hasError = true
+                continue
+            }
+
+            // 2. Dar baixa no estoque
+            const newQty = item.quantity - withdrawal.bottles
+            const { error: stockError } = await supabase
+                .from('inventory_items')
+                .update({ quantity: newQty })
+                .eq('id', item.id)
+
+            if (stockError) {
+                showToast(`Erro ao atualizar estoque para ${item.name}.`, 'error')
+                hasError = true
+                continue
+            }
+
+            // 3. Cálculo de Consumo Médio (ml/dia)
+            const { data: withdrawalsList } = await supabase
+                .from('ink_withdrawals')
+                .select('created_at')
+                .eq('item_id', item.id)
+                .order('created_at', { ascending: false })
+                .limit(2)
+
+            let updatedConsumption = item.daily_consumption
+
+            if (withdrawalsList && withdrawalsList.length === 2) {
+                const last = new Date(withdrawalsList[0].created_at)
+                const secondToLast = new Date(withdrawalsList[1].created_at)
+                const diffTime = Math.abs(last.getTime() - secondToLast.getTime())
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+                if (diffDays > 0) {
+                    updatedConsumption = Math.round((withdrawal.bottles * 1000) / diffDays)
+
+                    await supabase
+                        .from('inventory_items')
+                        .update({ daily_consumption: updatedConsumption })
+                        .eq('id', item.id)
+                }
+            }
+
+            updatedItems[itemIndex] = { ...item, quantity: newQty, daily_consumption: updatedConsumption }
         }
 
-        setItems(prev => prev.map(i =>
-            i.id === item.id ? { ...i, quantity: newQty, daily_consumption: updatedConsumption } : i
-        ))
-
+        setItems(updatedItems)
         setLoading(null)
-        setIsWithdrawing(false)
-        setWithdrawalForm({ itemId: '', bottles: 1 })
-        showToast('Retirada registrada e estoque atualizado!', 'success')
+
+        if (!hasError) {
+            setIsWithdrawing(false)
+            setWithdrawals([{ itemId: '', bottles: 1 }])
+            showToast('Retiradas registradas e estoque atualizado!', 'success')
+        }
     }
 
     return (
