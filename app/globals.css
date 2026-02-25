@@ -3,16 +3,8 @@
    Design: Dark Green Premium Dashboard
    ============================================================ */
 
-/* Fonte principal do projeto */
-@font-face {
-  font-family: 'AppFont';
-  src: url('/fonts/font.ttf') format('truetype');
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-
-
+/* A fonte agora é injetada nativamente pelo Next.js (next/font/local) 
+   via a variável CSS --font-primary-local no app/layout.tsx */
 
 /* ============================================================
    CSS VARIABLES - Design Tokens
@@ -82,7 +74,7 @@
   --transition-slow: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Fontes */
-  --font-primary: 'AppFont', -apple-system, sans-serif;
+  --font-primary: var(--font-primary-local), -apple-system, sans-serif;
   --font-mono: 'Courier New', monospace;
 }
 

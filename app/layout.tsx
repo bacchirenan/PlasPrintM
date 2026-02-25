@@ -7,13 +7,21 @@ export const metadata: Metadata = {
   keywords: 'manutenção, máquinas, PlasPrint, checklist, cronograma',
 }
 
+import localFont from 'next/font/local'
+
+const appFont = localFont({
+  src: '../public/fonts/font.ttf',
+  variable: '--font-primary-local',
+  display: 'swap',
+})
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" className={appFont.variable}>
       <body>{children}</body>
     </html>
   )
