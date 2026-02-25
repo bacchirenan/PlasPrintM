@@ -29,13 +29,7 @@ export function Header({ profile }: HeaderProps) {
         subtitle: 'PlasPrint Manutenção',
     }
 
-    const now = new Date()
-    const dateStr = now.toLocaleDateString('pt-BR', {
-        weekday: 'long',
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-    })
+
 
     return (
         <header className="header" id="main-header">
@@ -83,9 +77,7 @@ export function Header({ profile }: HeaderProps) {
                         {profile.role === 'master' ? '⭐ Master' : '🔧 Admin'}
                     </span>
                 )}
-                <div className="header-date" aria-label="Data atual">
-                    📅 <span className="date-text">{dateStr}</span>
-                </div>
+
             </div>
         </header>
     )
