@@ -565,9 +565,6 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                     {category === 'peca' && (
                                         <th style={{ padding: '16px 20px', fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Máquina</th>
                                     )}
-                                    {category === 'tinta' && (
-                                        <th style={{ padding: '16px 20px', fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Consumo Dia (ml)</th>
-                                    )}
                                     <th style={{ padding: '16px 20px', fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Qtd Atual</th>
                                     <th style={{ padding: '16px 20px', fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>Ações</th>
                                 </tr>
