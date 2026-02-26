@@ -55,6 +55,7 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
         const { data, error } = await supabase
             .from('inventory_items')
             .select('*')
+            .eq('category', 'peca')
             .order('name')
         if (!error && data) setInventoryItems(data)
     }, [supabase])

@@ -28,6 +28,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
     const [withdrawalHistory, setWithdrawalHistory] = useState<any[]>([])
     const [editingHistoryId, setEditingHistoryId] = useState<string | null>(null)
     const [historyEditForm, setHistoryEditForm] = useState<any>({})
+    const [selectedImage, setSelectedImage] = useState<string | null>(null)
 
     useEffect(() => {
         if (category === 'tinta') {
@@ -100,6 +101,26 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
         ))
     }
 
+    const handleDeleteItem = async (id: string, name: string) => {
+        if (!confirm(`Tem certeza que deseja apagar ${category === 'tinta' ? 'a tinta' : 'a peça'} "${name}"? Esta ação não pode ser desfeita.`)) return
+
+        setLoading(id)
+        const { error } = await supabase
+            .from('inventory_items')
+            .delete()
+            .eq('id', id)
+
+        setLoading(null)
+
+        if (error) {
+            showToast('Erro ao apagar item.', 'error')
+            return
+        }
+
+        setItems(prev => prev.filter(item => item.id !== id))
+        showToast('Item apagado com sucesso!', 'success')
+    }
+
     const handleSaveAdd = async () => {
         if (!editForm.name) {
             showToast('Nome é obrigatório.', 'error')
@@ -116,6 +137,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                 min_quantity: editForm.min_quantity || 0,
                 image_url: editForm.image_url,
                 category: category,
+                location: editForm.location,
                 daily_consumption: editForm.daily_consumption || 0,
                 lead_time_days: editForm.lead_time_days || 0
             })
@@ -146,6 +168,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                 code: editForm.code,
                 quantity: editForm.quantity,
                 min_quantity: editForm.min_quantity,
+                location: editForm.location,
                 daily_consumption: editForm.daily_consumption,
                 lead_time_days: editForm.lead_time_days,
                 image_url: editForm.image_url
@@ -437,7 +460,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                                 <input
                                                     type="number"
                                                     className="observation-input"
-                                                    style={{ margin: 0, padding: '4px', width: '55px', textAlign: 'center', fontSize: '13px', opacity: isAdmin ? 1 : 0.6 }}
+                                                    style={{ margin: 0, padding: '2px 4px', width: '50px', minWidth: '50px', textAlign: 'center', fontSize: '13px', opacity: isAdmin ? 1 : 0.6 }}
                                                     defaultValue={item.daily_consumption || 0}
                                                     onBlur={e => {
                                                         if (!isAdmin) return
@@ -457,7 +480,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                                 <input
                                                     type="number"
                                                     className="observation-input"
-                                                    style={{ margin: 0, padding: '4px 8px', width: '60px', textAlign: 'center', fontSize: '13px', opacity: isAdmin ? 1 : 0.6 }}
+                                                    style={{ margin: 0, padding: '2px 4px', width: '50px', minWidth: '50px', textAlign: 'center', fontSize: '13px', opacity: isAdmin ? 1 : 0.6 }}
                                                     defaultValue={item.lead_time_days || 0}
                                                     onBlur={e => {
                                                         if (!isAdmin) return
@@ -534,9 +557,14 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                         <table className="inventory-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                             <thead>
                                 <tr style={{ background: 'rgba(255,255,255,0.03)', textAlign: 'left' }}>
-                                    <th style={{ padding: '16px 20px', fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', width: '80px' }}>Foto</th>
+                                    {category === 'peca' && (
+                                        <th style={{ padding: '16px 20px', fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', width: '80px' }}>Foto</th>
+                                    )}
                                     <th style={{ padding: '16px 20px', fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Item</th>
                                     <th style={{ padding: '16px 20px', fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Código</th>
+                                    {category === 'peca' && (
+                                        <th style={{ padding: '16px 20px', fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Máquina</th>
+                                    )}
                                     {category === 'tinta' && (
                                         <th style={{ padding: '16px 20px', fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Consumo Dia (ml)</th>
                                     )}
@@ -550,25 +578,32 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
 
                                     return (
                                         <tr key={item.id} style={{ borderTop: '1px solid var(--border)' }}>
-                                            <td style={{ padding: '16px 20px' }}>
-                                                <div style={{
-                                                    width: '48px',
-                                                    height: '48px',
-                                                    borderRadius: '8px',
-                                                    background: 'rgba(255,255,255,0.05)',
-                                                    border: '1px solid var(--border)',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    overflow: 'hidden'
-                                                }}>
-                                                    {item.image_url ? (
-                                                        <img src={item.image_url} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                    ) : (
-                                                        <span style={{ fontSize: '20px', opacity: 0.3 }}>{category === 'tinta' ? '🧪' : '⚙️'}</span>
-                                                    )}
-                                                </div>
-                                            </td>
+                                            {category === 'peca' && (
+                                                <td style={{ padding: '16px 20px' }}>
+                                                    <div style={{
+                                                        width: '48px',
+                                                        height: '48px',
+                                                        borderRadius: '8px',
+                                                        background: 'rgba(255,255,255,0.05)',
+                                                        border: '1px solid var(--border)',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        overflow: 'hidden'
+                                                    }}>
+                                                        {item.image_url ? (
+                                                            <img
+                                                                src={item.image_url}
+                                                                alt={item.name}
+                                                                style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+                                                                onClick={() => setSelectedImage(item.image_url!)}
+                                                            />
+                                                        ) : (
+                                                            <span style={{ fontSize: '20px', opacity: 0.3 }}>⚙️</span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            )}
                                             <td style={{ padding: '16px 20px' }}>
                                                 <div style={{ fontWeight: 600 }}>{item.name}</div>
                                                 {isLowStock && (
@@ -578,6 +613,9 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                                 )}
                                             </td>
                                             <td style={{ padding: '16px 20px', color: 'var(--text-secondary)', fontSize: '13px' }}>{item.code || '—'}</td>
+                                            {category === 'peca' && (
+                                                <td style={{ padding: '16px 20px', color: 'var(--text-secondary)', fontSize: '13px' }}>{item.location || '—'}</td>
+                                            )}
                                             <td style={{ padding: '16px 20px', textAlign: 'center' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
                                                     <button
@@ -611,6 +649,16 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                                 >
                                                     Editar
                                                 </button>
+                                                {isAdmin && (
+                                                    <button
+                                                        className="btn btn-sm btn-ghost"
+                                                        style={{ color: 'var(--danger)', marginLeft: '8px' }}
+                                                        onClick={() => handleDeleteItem(item.id, item.name)}
+                                                        disabled={loading === item.id}
+                                                    >
+                                                        Apagar
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     )
@@ -626,302 +674,365 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                         </table>
                     </div>
                 </div>
-            )}
+            )
+            }
 
             {/* Modal de Cadastro/Edição */}
-            {(isAdding || isEditing) && (
-                <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    zIndex: 1000, backdropFilter: 'blur(4px)'
-                }}>
-                    <div className="card" style={{ width: '100%', maxWidth: '500px', padding: '24px' }}>
-                        <h3 style={{ marginBottom: '20px' }}>{isAdding ? `Cadastrar Nova ${category === 'tinta' ? 'Tinta' : 'Peça'}` : 'Editar Item'}</h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
-                            {/* Upload de Imagem (Apenas para Peças) */}
-                            {category === 'peca' && (
-                                <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '8px' }}>
-                                    <div style={{
-                                        width: '80px', height: '80px', borderRadius: '12px',
-                                        background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden'
-                                    }}>
-                                        {editForm.image_url ? (
-                                            <img src={editForm.image_url} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                        ) : (
-                                            <span style={{ fontSize: '30px', opacity: 0.2 }}>📷</span>
-                                        )}
+            {
+                (isAdding || isEditing) && (
+                    <div style={{
+                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        zIndex: 1000, backdropFilter: 'blur(4px)'
+                    }}>
+                        <div className="card" style={{ width: '100%', maxWidth: '500px', padding: '24px' }}>
+                            <h3 style={{ marginBottom: '20px' }}>{isAdding ? `Cadastrar Nova ${category === 'tinta' ? 'Tinta' : 'Peça'}` : 'Editar Item'}</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
+                                {/* Upload de Imagem (Apenas para Peças) */}
+                                {category === 'peca' && (
+                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '8px' }}>
+                                        <div style={{
+                                            width: '80px', height: '80px', borderRadius: '12px',
+                                            background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden'
+                                        }}>
+                                            {editForm.image_url ? (
+                                                <img src={editForm.image_url} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            ) : (
+                                                <span style={{ fontSize: '30px', opacity: 0.2 }}>📷</span>
+                                            )}
+                                        </div>
+                                        <label className="btn-secondary" style={{ fontSize: '12px', padding: '8px 16px', cursor: 'pointer' }}>
+                                            {uploading ? 'Carregando...' : 'Carregar Imagem'}
+                                            <input type="file" hidden accept="image/*" onChange={handleImageUpload} disabled={uploading} />
+                                        </label>
                                     </div>
-                                    <label className="btn-secondary" style={{ fontSize: '12px', padding: '8px 16px', cursor: 'pointer' }}>
-                                        {uploading ? 'Carregando...' : 'Carregar Imagem'}
-                                        <input type="file" hidden accept="image/*" onChange={handleImageUpload} disabled={uploading} />
-                                    </label>
-                                </div>
-                            )}
+                                )}
 
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                                <div>
-                                    <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Nome do Item</label>
-                                    <input
-                                        type="text"
-                                        className="observation-input"
-                                        value={editForm.name || ''}
-                                        onChange={e => {
-                                            const val = category === 'tinta' ? e.target.value.toUpperCase() : e.target.value
-                                            setEditForm(prev => ({ ...prev, name: val }))
-                                        }}
-                                        style={{ margin: 0, textTransform: category === 'tinta' ? 'uppercase' : 'none' }}
-                                    />
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                    <div>
+                                        <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Nome do Item</label>
+                                        <input
+                                            type="text"
+                                            className="observation-input"
+                                            value={editForm.name || ''}
+                                            onChange={e => {
+                                                const val = category === 'tinta' ? e.target.value.toUpperCase() : e.target.value
+                                                setEditForm(prev => ({ ...prev, name: val }))
+                                            }}
+                                            style={{ margin: 0, textTransform: category === 'tinta' ? 'uppercase' : 'none' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Código no Sistema</label>
+                                        <input
+                                            type="text"
+                                            className="observation-input"
+                                            value={editForm.code || ''}
+                                            onChange={e => {
+                                                const val = category === 'tinta' ? e.target.value.toUpperCase() : e.target.value
+                                                setEditForm(prev => ({ ...prev, code: val }))
+                                            }}
+                                            style={{ margin: 0, textTransform: category === 'tinta' ? 'uppercase' : 'none' }}
+                                        />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Código no Sistema</label>
-                                    <input
-                                        type="text"
-                                        className="observation-input"
-                                        value={editForm.code || ''}
-                                        onChange={e => {
-                                            const val = category === 'tinta' ? e.target.value.toUpperCase() : e.target.value
-                                            setEditForm(prev => ({ ...prev, code: val }))
-                                        }}
-                                        style={{ margin: 0, textTransform: category === 'tinta' ? 'uppercase' : 'none' }}
-                                    />
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                    <div>
+                                        <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Quantidade Atual{category === 'tinta' ? ' (L)' : ''}</label>
+                                        <input
+                                            type="number"
+                                            step="0.1"
+                                            className="observation-input"
+                                            style={{ margin: 0 }}
+                                            value={editForm.quantity || 0}
+                                            onChange={e => setEditForm(prev => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Estoque Mínimo</label>
+                                        <input
+                                            type="number"
+                                            className="observation-input"
+                                            style={{ margin: 0 }}
+                                            value={editForm.min_quantity || 0}
+                                            onChange={e => setEditForm(prev => ({ ...prev, min_quantity: parseInt(e.target.value) || 0 }))}
+                                        />
+                                    </div>
                                 </div>
+
+                                {category === 'peca' && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
+                                        <div>
+                                            <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Máquina (Opcional)</label>
+                                            <input
+                                                type="text"
+                                                className="observation-input"
+                                                style={{ margin: 0 }}
+                                                placeholder="Ex: Máquina 28, Máquina 180..."
+                                                value={editForm.location || ''}
+                                                onChange={e => setEditForm(prev => ({ ...prev, location: e.target.value }))}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {category === 'tinta' && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                        <div>
+                                            <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Consumo Diário (ml)</label>
+                                            <input
+                                                type="number"
+                                                step="1"
+                                                className="observation-input"
+                                                style={{ margin: 0 }}
+                                                value={editForm.daily_consumption || 0}
+                                                onChange={e => setEditForm(prev => ({ ...prev, daily_consumption: parseFloat(e.target.value) || 0 }))}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Dias para Entrega</label>
+                                            <input
+                                                type="number"
+                                                className="observation-input"
+                                                style={{ margin: 0 }}
+                                                value={editForm.lead_time_days || 0}
+                                                onChange={e => setEditForm(prev => ({ ...prev, lead_time_days: parseInt(e.target.value) || 0 }))}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '28px' }}>
+                                <button className="btn btn-ghost" onClick={() => { setIsAdding(false); setIsEditing(null); }}>Cancelar</button>
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={isAdding ? handleSaveAdd : handleSaveEdit}
+                                    disabled={loading !== null || uploading}
+                                >
+                                    {loading ? 'Salvando...' : isAdding ? `Cadastrar ${category === 'tinta' ? 'Tinta' : 'Peça'}` : 'Salvar Alterações'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Modal de Retirada de Tinta */}
+            {
+                isWithdrawing && (
+                    <div style={{
+                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        zIndex: 1000, backdropFilter: 'blur(4px)'
+                    }}>
+                        <div className="card" style={{ width: '100%', maxWidth: '450px', padding: '24px' }}>
+                            <h3 style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                Registrar Retirada de Tintas
+                            </h3>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto', paddingRight: '8px' }}>
+                                {withdrawals.map((withdrawal, index) => (
+                                    <div key={index} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) auto auto', gap: '12px', alignItems: 'flex-end', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                                        <div>
+                                            <label style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Tinta</label>
+                                            <select
+                                                className="observation-input"
+                                                style={{ margin: 0, width: '100%', fontSize: '13px' }}
+                                                value={withdrawal.itemId}
+                                                onChange={e => {
+                                                    const newWithdrawals = [...withdrawals]
+                                                    newWithdrawals[index].itemId = e.target.value
+                                                    setWithdrawals(newWithdrawals)
+                                                }}
+                                            >
+                                                <option value="">Escolher...</option>
+                                                {items.filter(i => i.category === 'tinta').map(item => (
+                                                    <option key={item.id} value={item.id} disabled={withdrawals.some((w, idx) => w.itemId === item.id && idx !== index)}>
+                                                        {item.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Qtd</label>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '2px 6px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                                <button
+                                                    className="btn-icon"
+                                                    style={{ width: '24px', height: '24px', fontSize: '14px' }}
+                                                    onClick={() => {
+                                                        const newWithdrawals = [...withdrawals]
+                                                        newWithdrawals[index].bottles = Math.max(1, newWithdrawals[index].bottles - 1)
+                                                        setWithdrawals(newWithdrawals)
+                                                    }}
+                                                >-</button>
+                                                <span style={{ fontSize: '14px', fontWeight: 700, minWidth: '18px', textAlign: 'center' }}>
+                                                    {withdrawal.bottles}
+                                                </span>
+                                                <button
+                                                    className="btn-icon"
+                                                    style={{ width: '24px', height: '24px', fontSize: '14px' }}
+                                                    onClick={() => {
+                                                        const newWithdrawals = [...withdrawals]
+                                                        newWithdrawals[index].bottles += 1
+                                                        setWithdrawals(newWithdrawals)
+                                                    }}
+                                                >+</button>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            {index === withdrawals.length - 1 && (
+                                                <button
+                                                    className="btn-icon"
+                                                    style={{ width: '32px', height: '32px', background: 'var(--success)', color: 'white' }}
+                                                    onClick={() => setWithdrawals([...withdrawals, { itemId: '', bottles: 1 }])}
+                                                    title="Adicionar outra cor"
+                                                >
+                                                    +
+                                                </button>
+                                            )}
+                                            {withdrawals.length > 1 && (
+                                                <button
+                                                    className="btn-icon"
+                                                    style={{ width: '32px', height: '32px', background: 'var(--danger)', color: 'white' }}
+                                                    onClick={() => {
+                                                        const newWithdrawals = withdrawals.filter((_, idx) => idx !== index)
+                                                        setWithdrawals(newWithdrawals)
+                                                    }}
+                                                    title="Remover linha"
+                                                >
+                                                    ✕
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                                <button className="btn btn-ghost" onClick={() => setIsWithdrawing(false)}>Cancelar</button>
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={handleRegisterWithdrawal}
+                                    disabled={loading === 'withdrawing' || !withdrawals.some(w => w.itemId)}
+                                >
+                                    {loading === 'withdrawing' ? 'Processando...' : 'Confirmar Tudo'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Modal de Edição de Histórico (Apenas Admin) */}
+            {
+                editingHistoryId && isAdmin && (
+                    <div style={{
+                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        zIndex: 1000, backdropFilter: 'blur(4px)'
+                    }}>
+                        <div className="card" style={{ width: '100%', maxWidth: '400px', padding: '24px' }}>
+                            <h3 style={{ marginBottom: '20px' }}>Editar Histórico</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <div>
-                                    <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Quantidade Atual (L)</label>
+                                    <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Quantidade (Litros)</label>
                                     <input
                                         type="number"
                                         step="0.1"
                                         className="observation-input"
                                         style={{ margin: 0 }}
-                                        value={editForm.quantity || 0}
-                                        onChange={e => setEditForm(prev => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))}
+                                        value={historyEditForm.quantity_liters || 0}
+                                        onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, quantity_liters: parseFloat(e.target.value) || 0 }))}
                                     />
                                 </div>
                                 <div>
-                                    <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Estoque Mínimo</label>
+                                    <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Data de Retirada</label>
                                     <input
-                                        type="number"
+                                        type="datetime-local"
                                         className="observation-input"
                                         style={{ margin: 0 }}
-                                        value={editForm.min_quantity || 0}
-                                        onChange={e => setEditForm(prev => ({ ...prev, min_quantity: parseInt(e.target.value) || 0 }))}
+                                        value={historyEditForm.created_at || ''}
+                                        onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, created_at: e.target.value }))}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Data de Fechamento</label>
+                                    <input
+                                        type="datetime-local"
+                                        className="observation-input"
+                                        style={{ margin: 0 }}
+                                        value={historyEditForm.closed_at || ''}
+                                        onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, closed_at: e.target.value || null }))}
+                                    />
+                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>Deixe vazio se o ciclo ainda estiver "Aberto".</span>
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Média de Consumo (ml/dia)</label>
+                                    <input
+                                        type="number"
+                                        step="1"
+                                        className="observation-input"
+                                        style={{ margin: 0 }}
+                                        value={historyEditForm.consumption_per_day_ml || ''}
+                                        onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, consumption_per_day_ml: e.target.value ? parseFloat(e.target.value) : null }))}
                                     />
                                 </div>
                             </div>
-
-                            {category === 'tinta' && (
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                                    <div>
-                                        <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Consumo Diário (ml)</label>
-                                        <input
-                                            type="number"
-                                            step="1"
-                                            className="observation-input"
-                                            style={{ margin: 0 }}
-                                            value={editForm.daily_consumption || 0}
-                                            onChange={e => setEditForm(prev => ({ ...prev, daily_consumption: parseFloat(e.target.value) || 0 }))}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Dias para Entrega</label>
-                                        <input
-                                            type="number"
-                                            className="observation-input"
-                                            style={{ margin: 0 }}
-                                            value={editForm.lead_time_days || 0}
-                                            onChange={e => setEditForm(prev => ({ ...prev, lead_time_days: parseInt(e.target.value) || 0 }))}
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '28px' }}>
-                            <button className="btn btn-ghost" onClick={() => { setIsAdding(false); setIsEditing(null); }}>Cancelar</button>
-                            <button
-                                className="btn btn-primary"
-                                onClick={isAdding ? handleSaveAdd : handleSaveEdit}
-                                disabled={loading !== null || uploading}
-                            >
-                                {loading ? 'Salvando...' : isAdding ? `Cadastrar ${category === 'tinta' ? 'Tinta' : 'Peça'}` : 'Salvar Alterações'}
-                            </button>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                                <button className="btn btn-ghost" onClick={() => setEditingHistoryId(null)}>Cancelar</button>
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={handleSaveHistoryEdit}
+                                    disabled={loading === editingHistoryId}
+                                >
+                                    {loading === editingHistoryId ? 'Salvando...' : 'Salvar'}
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
-            {/* Modal de Retirada de Tinta */}
-            {isWithdrawing && (
-                <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    zIndex: 1000, backdropFilter: 'blur(4px)'
-                }}>
-                    <div className="card" style={{ width: '100%', maxWidth: '450px', padding: '24px' }}>
-                        <h3 style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            Registrar Retirada de Tintas
-                        </h3>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto', paddingRight: '8px' }}>
-                            {withdrawals.map((withdrawal, index) => (
-                                <div key={index} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) auto auto', gap: '12px', alignItems: 'flex-end', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                                    <div>
-                                        <label style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Tinta</label>
-                                        <select
-                                            className="observation-input"
-                                            style={{ margin: 0, width: '100%', fontSize: '13px' }}
-                                            value={withdrawal.itemId}
-                                            onChange={e => {
-                                                const newWithdrawals = [...withdrawals]
-                                                newWithdrawals[index].itemId = e.target.value
-                                                setWithdrawals(newWithdrawals)
-                                            }}
-                                        >
-                                            <option value="">Escolher...</option>
-                                            {items.filter(i => i.category === 'tinta').map(item => (
-                                                <option key={item.id} value={item.id} disabled={withdrawals.some((w, idx) => w.itemId === item.id && idx !== index)}>
-                                                    {item.name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Qtd</label>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '2px 6px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                                            <button
-                                                className="btn-icon"
-                                                style={{ width: '24px', height: '24px', fontSize: '14px' }}
-                                                onClick={() => {
-                                                    const newWithdrawals = [...withdrawals]
-                                                    newWithdrawals[index].bottles = Math.max(1, newWithdrawals[index].bottles - 1)
-                                                    setWithdrawals(newWithdrawals)
-                                                }}
-                                            >-</button>
-                                            <span style={{ fontSize: '14px', fontWeight: 700, minWidth: '18px', textAlign: 'center' }}>
-                                                {withdrawal.bottles}
-                                            </span>
-                                            <button
-                                                className="btn-icon"
-                                                style={{ width: '24px', height: '24px', fontSize: '14px' }}
-                                                onClick={() => {
-                                                    const newWithdrawals = [...withdrawals]
-                                                    newWithdrawals[index].bottles += 1
-                                                    setWithdrawals(newWithdrawals)
-                                                }}
-                                            >+</button>
-                                        </div>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                        {index === withdrawals.length - 1 && (
-                                            <button
-                                                className="btn-icon"
-                                                style={{ width: '32px', height: '32px', background: 'var(--success)', color: 'white' }}
-                                                onClick={() => setWithdrawals([...withdrawals, { itemId: '', bottles: 1 }])}
-                                                title="Adicionar outra cor"
-                                            >
-                                                +
-                                            </button>
-                                        )}
-                                        {withdrawals.length > 1 && (
-                                            <button
-                                                className="btn-icon"
-                                                style={{ width: '32px', height: '32px', background: 'var(--danger)', color: 'white' }}
-                                                onClick={() => {
-                                                    const newWithdrawals = withdrawals.filter((_, idx) => idx !== index)
-                                                    setWithdrawals(newWithdrawals)
-                                                }}
-                                                title="Remover linha"
-                                            >
-                                                ✕
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-                            <button className="btn btn-ghost" onClick={() => setIsWithdrawing(false)}>Cancelar</button>
+            {/* Modal de Imagem Ampliada */}
+            {
+                selectedImage && (
+                    <div
+                        style={{
+                            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                            background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            zIndex: 2000, backdropFilter: 'blur(4px)'
+                        }}
+                        onClick={() => setSelectedImage(null)}
+                    >
+                        <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
                             <button
-                                className="btn btn-primary"
-                                onClick={handleRegisterWithdrawal}
-                                disabled={loading === 'withdrawing' || !withdrawals.some(w => w.itemId)}
+                                onClick={() => setSelectedImage(null)}
+                                style={{
+                                    position: 'absolute', top: '-16px', right: '-16px',
+                                    background: 'var(--danger)', color: 'white', border: 'none',
+                                    borderRadius: '50%', width: '32px', height: '32px',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    cursor: 'pointer', fontSize: '18px', zIndex: 10
+                                }}
                             >
-                                {loading === 'withdrawing' ? 'Processando...' : 'Confirmar Tudo'}
+                                ×
                             </button>
+                            <img
+                                src={selectedImage}
+                                alt="Ampliada"
+                                style={{
+                                    maxWidth: '100%',
+                                    maxHeight: '90vh',
+                                    objectFit: 'contain',
+                                    borderRadius: '8px',
+                                    border: '1px solid var(--border)'
+                                }}
+                            />
                         </div>
                     </div>
-                </div>
-            )}
-
-            {/* Modal de Edição de Histórico (Apenas Admin) */}
-            {editingHistoryId && isAdmin && (
-                <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    zIndex: 1000, backdropFilter: 'blur(4px)'
-                }}>
-                    <div className="card" style={{ width: '100%', maxWidth: '400px', padding: '24px' }}>
-                        <h3 style={{ marginBottom: '20px' }}>Editar Histórico</h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                            <div>
-                                <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Quantidade (Litros)</label>
-                                <input
-                                    type="number"
-                                    step="0.1"
-                                    className="observation-input"
-                                    style={{ margin: 0 }}
-                                    value={historyEditForm.quantity_liters || 0}
-                                    onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, quantity_liters: parseFloat(e.target.value) || 0 }))}
-                                />
-                            </div>
-                            <div>
-                                <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Data de Retirada</label>
-                                <input
-                                    type="datetime-local"
-                                    className="observation-input"
-                                    style={{ margin: 0 }}
-                                    value={historyEditForm.created_at || ''}
-                                    onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, created_at: e.target.value }))}
-                                />
-                            </div>
-                            <div>
-                                <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Data de Fechamento</label>
-                                <input
-                                    type="datetime-local"
-                                    className="observation-input"
-                                    style={{ margin: 0 }}
-                                    value={historyEditForm.closed_at || ''}
-                                    onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, closed_at: e.target.value || null }))}
-                                />
-                                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>Deixe vazio se o ciclo ainda estiver "Aberto".</span>
-                            </div>
-                            <div>
-                                <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Média de Consumo (ml/dia)</label>
-                                <input
-                                    type="number"
-                                    step="1"
-                                    className="observation-input"
-                                    style={{ margin: 0 }}
-                                    value={historyEditForm.consumption_per_day_ml || ''}
-                                    onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, consumption_per_day_ml: e.target.value ? parseFloat(e.target.value) : null }))}
-                                />
-                            </div>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-                            <button className="btn btn-ghost" onClick={() => setEditingHistoryId(null)}>Cancelar</button>
-                            <button
-                                className="btn btn-primary"
-                                onClick={handleSaveHistoryEdit}
-                                disabled={loading === editingHistoryId}
-                            >
-                                {loading === editingHistoryId ? 'Salvando...' : 'Salvar'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     )
 }

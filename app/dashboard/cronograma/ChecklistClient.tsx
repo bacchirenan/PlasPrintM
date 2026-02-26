@@ -253,38 +253,7 @@ export function ChecklistClient({
 
     return (
         <div>
-            {/* Cards de resumo */}
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                gap: '16px',
-                marginBottom: '28px',
-            }}>
-                <SummaryCard
-                    label="Local selecionado"
-                    value={currentMachine ? (currentMachine.type === 'room' || isNaN(Number(currentMachine.number)) ? currentMachine.name : `Máquina ${currentMachine.number}`) : '—'}
-                    icon={currentMachine?.type === 'room' ? "🏠" : "🏭"}
-                    color="var(--primary-accent)"
-                />
-                <SummaryCard
-                    label="Total de tarefas"
-                    value={String(items.length)}
-                    icon="📋"
-                    color="var(--info)"
-                />
-                <SummaryCard
-                    label="Em atraso"
-                    value={String(overdueCount)}
-                    icon="⚠️"
-                    color={overdueCount > 0 ? 'var(--danger)' : 'var(--success)'}
-                />
-                <SummaryCard
-                    label="Em dia"
-                    value={String(items.length - overdueCount)}
-                    icon="✅"
-                    color="var(--success)"
-                />
-            </div>
+
 
             {/* Tabs de máquinas */}
             <div className="machines-tabs" role="tablist" aria-label="Selecionar máquina">
