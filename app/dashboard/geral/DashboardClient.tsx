@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import type { Machine, MaintenanceItem, MaintenanceLog, InventoryItem } from '@/lib/types'
 import { FREQUENCY_LABELS } from '@/lib/types'
 
@@ -12,6 +13,7 @@ interface DashboardClientProps {
 }
 
 export function DashboardClient({ machines, items, logs, inventory }: DashboardClientProps) {
+    const router = useRouter()
 
     // ─── Lógica de dados ─────────────────────────────────────────────────────
 
@@ -84,12 +86,6 @@ export function DashboardClient({ machines, items, logs, inventory }: DashboardC
                     color={stats.totalOverdue > 0 ? 'var(--danger)' : 'var(--success)'}
                 />
                 <MetricCard
-                    label="Alertas de Estoque"
-                    value={String(stats.lowStockItems)}
-                    icon="📦"
-                    color={stats.lowStockItems > 0 ? 'var(--warning)' : 'var(--success)'}
-                />
-                <MetricCard
                     label="Limpezas Realizadas"
                     value={String(stats.totalCompleted)}
                     icon="✨"
@@ -111,7 +107,14 @@ export function DashboardClient({ machines, items, logs, inventory }: DashboardC
                     const machineEfficiency = machineTasks > 0 ? Math.round(((machineTasks - machineOverdue) / machineTasks) * 100) : 100
 
                     return (
-                        <div key={machine.id} className="card dashboard-machine-card" style={{ padding: '20px' }}>
+                        <div
+                            key={machine.id}
+                            className="card dashboard-machine-card"
+                            style={{ padding: '20px', cursor: 'pointer', transition: 'transform 0.2s' }}
+                            onClick={() => router.push(`/dashboard/cronograma?machineId=${machine.id}`)}
+                            onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
+                            onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                        >
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                                 <div style={{ fontSize: '18px', fontWeight: 800 }}>
                                     {machine.type === 'room' || isNaN(Number(machine.number)) ? machine.name : `Máquina ${machine.number}`}

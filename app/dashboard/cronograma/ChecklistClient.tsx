@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/ToastProvider'
 import { formatDistanceToNow } from 'date-fns'
@@ -155,13 +156,23 @@ export function ChecklistClient({
     const { showToast } = useToast()
     const supabaseRef = useRef(supabase)
 
-    const [activeMachine, setActiveMachine] = useState<string>(machines[0]?.id || '')
+    const searchParams = useSearchParams()
+    const machineIdFromUrl = searchParams.get('machineId')
+
+    const [activeMachine, setActiveMachine] = useState<string>(machineIdFromUrl || machines[0]?.id || '')
     const [logs, setLogs] = useState<MaintenanceLog[]>(initialLogs)
     const [loadingItem, setLoadingItem] = useState<string | null>(null)
     const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({})
 
     const [pendingRatings, setPendingRatings] = useState<Record<string, Rating>>({})
     const [pendingObs, setPendingObs] = useState<Record<string, string>>({})
+
+    // Atualizar máquina ativa se o parâmetro na URL mudar
+    useEffect(() => {
+        if (machineIdFromUrl && machineIdFromUrl !== activeMachine) {
+            setActiveMachine(machineIdFromUrl)
+        }
+    }, [machineIdFromUrl])
 
     const isMaster = profile.role === 'master' || profile.role === 'admin'
 
@@ -345,27 +356,51 @@ export function ChecklistClient({
             return
         }
 
-        if (!confirm(`Deseja realmente desmarcar "${item.name}"?\nO registro realizado em ${new Date(lastLog.completed_at).toLocaleString()} será excluído.`)) {
+        if (!confirm(`Deseja realmente desmarcar "${item.name}"?\nIsso removerá o registro feito por ${lastLog.user?.full_name || 'um usuário'}.`)) {
             return
         }
 
         setLoadingItem(key)
 
-        const { error } = await supabase
+        // Tenta deletar pelo ID específico. Se falhar por ser um ID local/fantasma,
+        // o Supabase retornará sucesso mas 0 linhas afetadas.
+        const { error, count } = await supabase
             .from('maintenance_logs')
-            .delete()
+            .delete({ count: 'exact' })
             .eq('id', lastLog.id)
 
         if (error) {
             console.error('Erro ao deletar log:', error)
-            showToast('Erro ao desmarcar item.', 'error')
+            showToast('Erro de permissão no banco de dados.', 'error')
             setLoadingItem(null)
             return
         }
 
-        setLogs(prev => prev.filter(l => l.id !== lastLog.id))
+        // Se o banco de dados não encontrou o item pelo ID (talvez ID local), 
+        // tentamos uma limpeza geral do registro mais recente para essa máquina/item
+        if (count === 0) {
+            const { error: secondTryError } = await supabase
+                .from('maintenance_logs')
+                .delete()
+                .eq('machine_id', machine.id)
+                .eq('item_id', item.id)
+                .eq('user_id', lastLog.user_id)
+                .order('completed_at', { ascending: false })
+                .limit(1)
+
+            if (secondTryError) {
+                showToast('Falha crítica ao remover registro.', 'error')
+                setLoadingItem(null)
+                return
+            }
+        }
+
+        // Atualiza a tela imediatamente removendo TODOS os logs desse item para esta máquina
+        // Isso evita que registros redundantes (cliques duplos) mantenham o item como "check"
+        setLogs(prev => prev.filter(l => !(l.machine_id === machine.id && l.item_id === item.id)))
+
         setLoadingItem(null)
-        showToast(`✓ Registro de ${item.name} removido.`, 'success')
+        showToast(`✓ Registro de ${item.name} removido com sucesso.`, 'success')
     }, [supabase, profile, isMaster, getLatestLog, showToast])
 
     // ─── Salvar avaliação em log já existente (somente master) ───────────────
@@ -428,206 +463,251 @@ export function ChecklistClient({
             </div>
 
             {/* Checklist por categoria */}
-            {currentMachine && categories.map(category => {
-                const categoryItems = items.filter(i => {
-                    const isCorrectCategory = i.category_id === category.id
-                    const isCorrectTarget = i.target_type === 'both' || i.target_type === (currentMachine as any).type
-                    return isCorrectCategory && isCorrectTarget
+            {currentMachine && categories
+                .filter(cat => {
+                    // Remover Semestral (semiannual) e Quinzenal (biweekly) da Encabeçadora
+                    if (currentMachine.number === 'ENCAB_CANUDOS') {
+                        return cat.frequency !== 'semiannual' && cat.frequency !== 'biweekly'
+                    }
+                    return true
                 })
-                if (categoryItems.length === 0) return null
+                .map(category => {
+                    const categoryItems = items.filter(i => {
+                        const isCorrectCategory = i.category_id === category.id
+                        const isCorrectTarget = i.target_type === 'both' || i.target_type === (currentMachine as any).type
+                        if (!isCorrectCategory || !isCorrectTarget) return false
 
-                const isExpanded = expandedCategories[category.id] || false
+                        // Lógica específica para a Encabeçadora na categoria Semanal
+                        if (currentMachine.number === 'ENCAB_CANUDOS' && category.frequency === 'weekly') {
+                            // MOSTRAR APENAS ESSES DOIS (EXATAMENTE)
+                            return i.name === 'Limpeza da Máquina' || i.name === 'Verificar Mangueira de Ar'
+                        }
 
-                // Cálculo do progresso
-                const totalItems = categoryItems.length
-                const completedItems = categoryItems.filter(item => {
-                    const lastLog = getLatestLog(currentMachine.id, item.id)
-                    return !isItemOverdue(lastLog, category.frequency_days, category.frequency)
-                }).length
-                const percent = Math.round((completedItems / totalItems) * 100)
+                        // Lógica específica para a Encabeçadora na categoria Trimestral
+                        if (currentMachine.number === 'ENCAB_CANUDOS' && category.frequency === 'quarterly') {
+                            // Mostrar apenas o item de lubrificação (que será renomeado na tela)
+                            return i.name === 'Lubrificar Trilho do Carro'
+                        }
 
-                return (
-                    <div key={category.id} className={`checklist-section card ${isExpanded ? 'is-expanded' : 'is-collapsed'}`} style={{ marginBottom: '16px', padding: 0 }}>
-                        <div
-                            className="checklist-section-header"
-                            onClick={() => toggleCategory(category.id)}
-                            style={{ cursor: 'pointer', padding: '16px 20px', userSelect: 'none' }}
-                        >
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '120px' }}>
-                                <span className={`frequency-badge ${category.frequency}`}>
-                                    {FREQUENCY_LABELS[category.frequency]}
-                                </span>
-                                {/* Mini Barra de Status */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                    <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                                        {percent}% Concluído
+                        // Para as OUTRAS máquinas, ESCONDER a Mangueira de Ar
+                        if (currentMachine.number !== 'ENCAB_CANUDOS' && i.name === 'Verificar Mangueira de Ar') {
+                            return false
+                        }
+
+                        // Lógica para Limpeza dos Sensores de Material (Apenas máquinas 28, 29, 180, 181, 182)
+                        const isMainMachine = ['28', '29', '180', '181', '182'].includes(currentMachine.number)
+                        if (i.name === 'Limpeza dos Sensores de Material' && !isMainMachine) {
+                            return false
+                        }
+
+                        return true
+                    })
+                    // Remover duplicatas caso o banco ainda as tenha (Garantia extra no Frontend)
+                    const uniqueItems = Array.from(new Map(categoryItems.map(item => [item.name, item])).values())
+
+                    if (uniqueItems.length === 0) return null
+
+                    const isExpanded = expandedCategories[category.id] || false
+
+                    // Cálculo do progresso
+                    const totalItems = uniqueItems.length
+                    const completedItems = uniqueItems.filter(item => {
+                        const lastLog = getLatestLog(currentMachine.id, item.id)
+                        return !isItemOverdue(lastLog, category.frequency_days, category.frequency)
+                    }).length
+                    const percent = Math.round((completedItems / totalItems) * 100)
+
+                    return (
+                        <div key={category.id} className={`checklist-section card ${isExpanded ? 'is-expanded' : 'is-collapsed'}`} style={{ marginBottom: '16px', padding: 0 }}>
+                            <div
+                                className="checklist-section-header"
+                                onClick={() => toggleCategory(category.id)}
+                                style={{ cursor: 'pointer', padding: '16px 20px', userSelect: 'none' }}
+                            >
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '120px' }}>
+                                    <span className={`frequency-badge ${category.frequency}`}>
+                                        {FREQUENCY_LABELS[category.frequency]}
                                     </span>
-                                    <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', overflow: 'hidden' }}>
-                                        <div style={{
-                                            width: `${percent}%`,
-                                            height: '100%',
-                                            background: percent > 80 ? 'var(--success)' : percent > 50 ? 'var(--warning)' : 'var(--danger)',
-                                            transition: 'width 0.5s ease'
-                                        }} />
+                                    {/* Mini Barra de Status */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                                            {percent}% Concluído
+                                        </span>
+                                        <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', overflow: 'hidden' }}>
+                                            <div style={{
+                                                width: `${percent}%`,
+                                                height: '100%',
+                                                background: percent > 80 ? 'var(--success)' : percent > 50 ? 'var(--warning)' : 'var(--danger)',
+                                                transition: 'width 0.5s ease'
+                                            }} />
+                                        </div>
                                     </div>
+                                </div>
+
+                                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                        A cada {category.frequency_days} dias
+                                    </span>
+                                    <span className="expand-icon" style={{
+                                        transition: 'transform 0.3s ease',
+                                        transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                        opacity: 0.6
+                                    }}>
+                                        ▼
+                                    </span>
                                 </div>
                             </div>
 
-                            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                                    A cada {category.frequency_days} dias
-                                </span>
-                                <span className="expand-icon" style={{
-                                    transition: 'transform 0.3s ease',
-                                    transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                                    opacity: 0.6
-                                }}>
-                                    ▼
-                                </span>
-                            </div>
-                        </div>
+                            <div className="checklist-collapsible-wrapper" style={{
+                                maxHeight: isExpanded ? '2000px' : '0',
+                                overflow: 'hidden',
+                                transition: 'max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease',
+                                opacity: isExpanded ? 1 : 0
+                            }}>
+                                <div className="checklist-items" role="list" style={{ padding: '0 20px 20px 20px' }}>
+                                    {uniqueItems.map(item => {
+                                        const lastLog = getLatestLog(currentMachine.id, item.id)
+                                        const overdue = isItemOverdue(lastLog, category.frequency_days, category.frequency)
+                                        const isCompleted = !overdue
+                                        const itemKey = `${currentMachine.id}__${item.id}`
+                                        const isLoading = loadingItem === itemKey
 
-                        <div className="checklist-collapsible-wrapper" style={{
-                            maxHeight: isExpanded ? '2000px' : '0',
-                            overflow: 'hidden',
-                            transition: 'max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease',
-                            opacity: isExpanded ? 1 : 0
-                        }}>
-                            <div className="checklist-items" role="list" style={{ padding: '0 20px 20px 20px' }}>
-                                {categoryItems.map(item => {
-                                    const lastLog = getLatestLog(currentMachine.id, item.id)
-                                    const overdue = isItemOverdue(lastLog, category.frequency_days, category.frequency)
-                                    const isCompleted = !overdue
-                                    const itemKey = `${currentMachine.id}__${item.id}`
-                                    const isLoading = loadingItem === itemKey
+                                        // Alterar nomes especificamente para a Encabeçadora e máquinas principais
+                                        let displayName = item.name;
+                                        const isMainMachine = ['28', '29', '180', '181', '182'].includes(currentMachine.number);
+                                        const isEncab = currentMachine.number === 'ENCAB_CANUDOS';
 
-                                    return (
-                                        <div
-                                            key={item.id}
-                                            className={`checklist-item ${isCompleted ? 'completed' : ''} ${overdue ? 'overdue' : ''}`}
-                                            role="listitem"
-                                            id={`item-${item.id}`}
-                                        >
-                                            {/* Checkbox */}
-                                            <div className="custom-checkbox">
-                                                <input
-                                                    type="checkbox"
-                                                    id={`chk-${currentMachine.id}-${item.id}`}
-                                                    checked={isCompleted}
-                                                    onChange={() => {
-                                                        if (isCompleted) {
-                                                            handleUncheck(item, currentMachine)
-                                                        } else {
-                                                            handleCheck(item, currentMachine)
-                                                        }
-                                                    }}
-                                                    disabled={isLoading}
-                                                    aria-label={`Marcar ${item.name} como concluído`}
-                                                />
-                                                <div className="checkbox-visual">
-                                                    {isLoading ? (
-                                                        <span className="spinner" style={{ width: '10px', height: '10px' }} />
-                                                    ) : (
-                                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                                            <polyline points="20 6 9 17 4 12" />
-                                                        </svg>
-                                                    )}
+                                        if ((isMainMachine || isEncab) && item.name === 'Lubrificar Trilho do Carro') {
+                                            displayName = 'Lubrificar pontos de Graxa';
+                                        }
+
+                                        return (
+                                            <div
+                                                key={item.id}
+                                                className={`checklist-item ${isCompleted ? 'completed' : ''} ${overdue ? 'overdue' : ''}`}
+                                                role="listitem"
+                                                id={`item-${item.id}`}
+                                            >
+                                                {/* Checkbox */}
+                                                <div className="custom-checkbox">
+                                                    <input
+                                                        type="checkbox"
+                                                        id={`chk-${currentMachine.id}-${item.id}`}
+                                                        checked={isCompleted}
+                                                        onChange={() => {
+                                                            if (isCompleted) {
+                                                                handleUncheck(item, currentMachine)
+                                                            } else {
+                                                                handleCheck(item, currentMachine)
+                                                            }
+                                                        }}
+                                                        disabled={isLoading}
+                                                        aria-label={`Marcar ${displayName} como concluído`}
+                                                    />
+                                                    <div className="checkbox-visual">
+                                                        {isLoading ? (
+                                                            <span className="spinner" style={{ width: '10px', height: '10px' }} />
+                                                        ) : (
+                                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                                <polyline points="20 6 9 17 4 12" />
+                                                            </svg>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
 
-                                            {/* Conteúdo */}
-                                            <div className="checklist-item-content">
-                                                <div className="checklist-item-name">{item.name}</div>
-                                                <div className="checklist-item-meta">
-                                                    <span>🕐 {formatTimeSince(lastLog)}</span>
-                                                    {lastLog && (
-                                                        <span className="user-tag">
-                                                            👤 {(lastLog.user as Profile | undefined)?.full_name
-                                                                || (lastLog.user as Profile | undefined)?.email?.split('@')[0]
-                                                                || 'Usuário'}
-                                                        </span>
-                                                    )}
-                                                    {overdue && (
-                                                        <span className="overdue-tag">Em atraso</span>
-                                                    )}
-                                                    {isCompleted && (lastLog?.rating || lastLog?.observation) && (
-                                                        <div style={{
-                                                            marginTop: '6px',
-                                                            padding: '8px 12px',
-                                                            background: 'rgba(255,255,255,0.03)',
-                                                            borderRadius: '6px',
-                                                            borderLeft: `3px solid ${lastLog.rating === 'otimo' ? 'var(--success)' :
-                                                                lastLog.rating === 'bom' ? 'var(--warning)' :
-                                                                    lastLog.rating === 'ruim' ? 'var(--danger)' : 'var(--border)'}`
-                                                        }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: lastLog.observation ? '4px' : '0' }}>
-                                                                {lastLog.rating && (
-                                                                    <span style={{
-                                                                        fontSize: '11px',
-                                                                        fontWeight: 700,
-                                                                        color: lastLog.rating === 'otimo' ? 'var(--success)' :
-                                                                            lastLog.rating === 'bom' ? 'var(--warning)' : 'var(--danger)',
-                                                                        textTransform: 'uppercase'
-                                                                    }}>
-                                                                        ⭐ {RATING_LABELS[lastLog.rating]}
-                                                                    </span>
+                                                {/* Conteúdo */}
+                                                <div className="checklist-item-content">
+                                                    <div className="checklist-item-name">{displayName}</div>
+                                                    <div className="checklist-item-meta">
+                                                        <span>🕐 {formatTimeSince(lastLog)}</span>
+                                                        {lastLog && (
+                                                            <span className="user-tag">
+                                                                👤 {(lastLog.user as Profile | undefined)?.full_name
+                                                                    || (lastLog.user as Profile | undefined)?.email?.split('@')[0]
+                                                                    || 'Usuário'}
+                                                            </span>
+                                                        )}
+                                                        {overdue && (
+                                                            <span className="overdue-tag">Em atraso</span>
+                                                        )}
+                                                        {isCompleted && (lastLog?.rating || lastLog?.observation) && (
+                                                            <div style={{
+                                                                marginTop: '6px',
+                                                                padding: '8px 12px',
+                                                                background: 'rgba(255,255,255,0.03)',
+                                                                borderRadius: '6px',
+                                                                borderLeft: `3px solid ${lastLog.rating === 'otimo' ? 'var(--success)' :
+                                                                    lastLog.rating === 'bom' ? 'var(--warning)' :
+                                                                        lastLog.rating === 'ruim' ? 'var(--danger)' : 'var(--border)'}`
+                                                            }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: lastLog.observation ? '4px' : '0' }}>
+                                                                    {lastLog.rating && (
+                                                                        <span style={{
+                                                                            fontSize: '11px',
+                                                                            fontWeight: 700,
+                                                                            color: lastLog.rating === 'otimo' ? 'var(--success)' :
+                                                                                lastLog.rating === 'bom' ? 'var(--warning)' : 'var(--danger)',
+                                                                            textTransform: 'uppercase'
+                                                                        }}>
+                                                                            ⭐ {RATING_LABELS[lastLog.rating]}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                {lastLog.observation && (
+                                                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                                                                        " {lastLog.observation} "
+                                                                    </div>
                                                                 )}
                                                             </div>
-                                                            {lastLog.observation && (
-                                                                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                                                                    " {lastLog.observation} "
-                                                                </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Campos master */}
+                                                    {isMaster && (
+                                                        <div className="master-fields">
+                                                            <div className="rating-group" role="group" aria-label="Avaliação">
+                                                                {(['ruim', 'bom', 'otimo'] as Rating[]).map(r => (
+                                                                    <button
+                                                                        key={r}
+                                                                        className={`rating-btn ${r} ${pendingRatings[itemKey] === r ? 'selected' : ''}`}
+                                                                        onClick={() => setPendingRatings(prev => ({
+                                                                            ...prev,
+                                                                            [itemKey]: prev[itemKey] === r ? '' as Rating : r,
+                                                                        }))}
+                                                                        aria-pressed={pendingRatings[itemKey] === r}
+                                                                        title={RATING_LABELS[r]}
+                                                                    >
+                                                                        {RATING_LABELS[r]}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                            <input
+                                                                type="text"
+                                                                className="observation-input"
+                                                                placeholder="Observação (opcional)"
+                                                                value={pendingObs[itemKey] || ''}
+                                                                onChange={e => setPendingObs(prev => ({ ...prev, [itemKey]: e.target.value }))}
+                                                                aria-label="Observação"
+                                                            />
+                                                            {lastLog && (pendingRatings[itemKey] || pendingObs[itemKey]) && (
+                                                                <button
+                                                                    className="btn btn-sm btn-secondary"
+                                                                    onClick={() => handleUpdateLog(lastLog.id, itemKey)}
+                                                                >
+                                                                    Salvar avaliação
+                                                                </button>
                                                             )}
                                                         </div>
                                                     )}
                                                 </div>
-
-                                                {/* Campos master */}
-                                                {isMaster && (
-                                                    <div className="master-fields">
-                                                        <div className="rating-group" role="group" aria-label="Avaliação">
-                                                            {(['ruim', 'bom', 'otimo'] as Rating[]).map(r => (
-                                                                <button
-                                                                    key={r}
-                                                                    className={`rating-btn ${r} ${pendingRatings[itemKey] === r ? 'selected' : ''}`}
-                                                                    onClick={() => setPendingRatings(prev => ({
-                                                                        ...prev,
-                                                                        [itemKey]: prev[itemKey] === r ? '' as Rating : r,
-                                                                    }))}
-                                                                    aria-pressed={pendingRatings[itemKey] === r}
-                                                                    title={RATING_LABELS[r]}
-                                                                >
-                                                                    {RATING_LABELS[r]}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                        <input
-                                                            type="text"
-                                                            className="observation-input"
-                                                            placeholder="Observação (opcional)"
-                                                            value={pendingObs[itemKey] || ''}
-                                                            onChange={e => setPendingObs(prev => ({ ...prev, [itemKey]: e.target.value }))}
-                                                            aria-label="Observação"
-                                                        />
-                                                        {lastLog && (pendingRatings[itemKey] || pendingObs[itemKey]) && (
-                                                            <button
-                                                                className="btn btn-sm btn-secondary"
-                                                                onClick={() => handleUpdateLog(lastLog.id, itemKey)}
-                                                            >
-                                                                Salvar avaliação
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                )}
                                             </div>
-                                        </div>
-                                    )
-                                })}
+                                        )
+                                    })}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )
-            })}
+                    )
+                })}
         </div>
     )
 }

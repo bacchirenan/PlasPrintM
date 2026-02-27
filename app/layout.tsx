@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   title: 'PlasPrint Manutenção',
   description: 'Sistema de controle e cronograma de manutenção de máquinas PlasPrint',
   keywords: 'manutenção, máquinas, PlasPrint, checklist, cronograma',
+  icons: {
+    icon: '/favicon.png',
+  },
 }
 
 import localFont from 'next/font/local'

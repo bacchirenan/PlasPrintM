@@ -212,6 +212,22 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
         ))
     }
 
+    // ─── Auxiliares de Cálculo de Consumo ─────────────────────────────────────
+    const getWorkingDaysCount = (start: Date, end: Date): number => {
+        const oneDay = 24 * 60 * 60 * 1000
+        const totalDiffDays = Math.max(1, Math.round(Math.abs(end.getTime() - start.getTime()) / oneDay))
+
+        let sundays = 0
+        // Começamos do dia seguinte ao início até o dia final
+        for (let i = 1; i <= totalDiffDays; i++) {
+            const checkDate = new Date(start.getTime() + (i * oneDay))
+            if (checkDate.getDay() === 0) sundays++
+        }
+
+        const workingDays = totalDiffDays - sundays
+        return Math.max(1, workingDays)
+    }
+
     const handleRegisterWithdrawal = async () => {
         const validWithdrawals = withdrawals.filter(w => w.itemId && w.bottles > 0)
 
@@ -230,17 +246,17 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
             if (itemIndex === -1) continue
 
             const item = updatedItems[itemIndex]
-
             if (item.quantity < withdrawal.bottles) {
                 showToast(`Estoque insuficiente para a tinta ${item.name}.`, 'error')
-                hasError = true
                 continue
             }
 
             let updatedConsumption = item.daily_consumption
+            let closedRecordId: string | null = null
+            let closedRecordData: any = null
 
-            // 1. Lógica de fechamento da retirada anterior
-            const { data: previousWithdrawals } = await supabase
+            // 1. Fechar ciclo anterior
+            const { data: previous, error: fError } = await supabase
                 .from('ink_withdrawals')
                 .select('*')
                 .eq('item_id', item.id)
@@ -248,80 +264,70 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                 .order('created_at', { ascending: false })
                 .limit(1)
 
-            if (previousWithdrawals && previousWithdrawals.length > 0) {
-                const prev = previousWithdrawals[0]
-                const startDate = new Date(prev.created_at)
-                const endDate = new Date()
-
-                let daysDiff = 0
-                const current = new Date(startDate)
-                current.setHours(0, 0, 0, 0)
-                const end = new Date(endDate)
-                end.setHours(0, 0, 0, 0)
-
-                // Ignorar domingos e calcular os dias
-                while (current <= end) {
-                    if (current.getDay() !== 0) {
-                        daysDiff++
-                    }
-                    current.setDate(current.getDate() + 1)
-                }
-
-                if (daysDiff === 0) daysDiff = 1 // Evitar divisão por 0
-
-                const newConsumption = Math.round((prev.quantity_liters * 1000) / daysDiff)
-                updatedConsumption = newConsumption
-
-                await supabase.from('ink_withdrawals')
-                    .update({
-                        closed_at: endDate.toISOString(),
-                        consumption_per_day_ml: newConsumption
-                    })
-                    .eq('id', prev.id)
-
-                await supabase.from('inventory_items')
-                    .update({ daily_consumption: updatedConsumption })
-                    .eq('id', item.id)
+            if (fError) {
+                console.error('Erro fHist (Supabase):', {
+                    message: fError.message,
+                    details: fError.details,
+                    hint: fError.hint,
+                    code: fError.code
+                })
             }
 
-            // 2. Registrar a nova retirada
-            const { data: newLog, error: logError } = await supabase
+            if (previous && previous.length > 0) {
+                const prev = previous[0]
+                const endDate = new Date()
+                const startDate = new Date(prev.created_at)
+
+                // Cálculo de dias úteis (exclui domingos)
+                const diffDays = getWorkingDaysCount(startDate, endDate)
+                const newConsumption = Math.round((prev.quantity_liters * 1000) / diffDays)
+
+                const { error: uError } = await supabase.from('ink_withdrawals')
+                    .update({ closed_at: endDate.toISOString(), consumption_per_day_ml: newConsumption })
+                    .eq('id', prev.id)
+
+                if (uError) {
+                    console.error('Erro uHist:', uError)
+                } else {
+                    closedRecordId = prev.id
+                    closedRecordData = { closed_at: endDate.toISOString(), consumption_per_day_ml: newConsumption }
+
+                    // MÉDIA PONDERADA: Considera o valor que já estava setado (como os 90ml) e a média do ciclo atual
+                    updatedConsumption = item.daily_consumption > 0
+                        ? Math.round((item.daily_consumption + newConsumption) / 2)
+                        : newConsumption
+
+                    await supabase.from('inventory_items')
+                        .update({ daily_consumption: updatedConsumption })
+                        .eq('id', item.id)
+                }
+            }
+
+            // 2. Nova retirada
+            const { data: newLog, error: lError } = await supabase
                 .from('ink_withdrawals')
-                .insert({
-                    item_id: item.id,
-                    quantity_liters: withdrawal.bottles
-                })
+                .insert({ item_id: item.id, quantity_liters: withdrawal.bottles })
                 .select('*, inventory_items(name, code)')
                 .single()
 
-            if (logError) {
-                showToast(`Erro ao registrar retirada para ${item.name}.`, 'error')
+            if (lError) {
+                showToast(`Erro ao registrar nova retirada para ${item.name}.`, 'error')
                 hasError = true
                 continue
             }
 
-            // 3. Dar baixa no estoque
+            // 3. Baixa no estoque
             const newQty = item.quantity - withdrawal.bottles
-            const { error: stockError } = await supabase
-                .from('inventory_items')
-                .update({ quantity: newQty })
-                .eq('id', item.id)
+            const { error: sError } = await supabase.from('inventory_items').update({ quantity: newQty }).eq('id', item.id)
+            if (sError) console.error('Erro sStock:', sError)
 
-            if (stockError) {
-                showToast(`Erro ao atualizar estoque para ${item.name}.`, 'error')
-                hasError = true
-                continue
-            }
-
-            // Atualiza o state de History
+            // 4. Atualizar Histórico (Consolidado)
             setWithdrawalHistory(prevHist => {
-                const updated = prevHist.map(h => {
-                    if (previousWithdrawals && previousWithdrawals.length > 0 && h.id === previousWithdrawals[0].id) {
-                        return { ...h, closed_at: new Date().toISOString(), consumption_per_day_ml: updatedConsumption }
-                    }
-                    return h;
-                })
-                if (newLog) return [newLog, ...updated]
+                let updated = [...prevHist]
+                if (closedRecordId) {
+                    updated = updated.map(h => h.id === closedRecordId ? { ...h, ...closedRecordData } : h)
+                }
+                if (newLog) updated = [newLog, ...updated]
                 return updated
             })
 
@@ -334,21 +340,90 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
         if (!hasError) {
             setIsWithdrawing(false)
             setWithdrawals([{ itemId: '', bottles: 1 }])
-            showToast('Retiradas registradas e estoque atualizado!', 'success')
+            showToast('Retiradas registradas com sucesso!', 'success')
         }
     }
 
     const handleDeleteHistory = async (id: string) => {
-        if (!confirm('Deseja realmente apagar este registro de histórico? Isto não devolverá a tinta ao estoque principal.')) return
+        const record = withdrawalHistory.find(h => h.id === id)
+        if (!record) return
+
+        if (!confirm(`Deseja realmente apagar este registro de histórico? ${record.quantity_liters}L serão devolvidos ao estoque e a média de consumo será recalculada.`)) return
+
         setLoading(id)
-        const { error } = await supabase.from('ink_withdrawals').delete().eq('id', id)
-        setLoading(null)
-        if (error) {
-            showToast('Erro ao apagar histórico.', 'error')
-            return
+
+        try {
+            // 1. Devolver ao estoque
+            const item = items.find(i => i.id === record.item_id)
+            let newQty = item?.quantity || 0
+            if (item) {
+                newQty = item.quantity + record.quantity_liters
+                await supabase.from('inventory_items').update({ quantity: newQty }).eq('id', item.id)
+            }
+
+            // 2. Se o registro deletado for o mais recente (estiver aberto), 
+            // precisamos reabrir o registro que ele fechou.
+            if (!record.closed_at) {
+                const { data: lastClosed } = await supabase
+                    .from('ink_withdrawals')
+                    .select('*')
+                    .eq('item_id', record.item_id)
+                    .not('closed_at', 'is', null)
+                    .order('closed_at', { ascending: false })
+                    .limit(1)
+
+                if (lastClosed && lastClosed.length > 0) {
+                    const prev = lastClosed[0]
+                    // Reabrir o registro anterior
+                    await supabase.from('ink_withdrawals')
+                        .update({ closed_at: null, consumption_per_day_ml: null })
+                        .eq('id', prev.id)
+
+                    // Buscar a média do NOVO "último fechado" para o planejamento
+                    const { data: newLastClosed } = await supabase
+                        .from('ink_withdrawals')
+                        .select('consumption_per_day_ml')
+                        .eq('item_id', record.item_id)
+                        .not('id', 'eq', prev.id)
+                        .not('closed_at', 'is', null)
+                        .order('closed_at', { ascending: false })
+                        .limit(1)
+
+                    const newAvg = (newLastClosed && newLastClosed.length > 0) ? newLastClosed[0].consumption_per_day_ml : 0
+
+                    await supabase.from('inventory_items')
+                        .update({ daily_consumption: newAvg })
+                        .eq('id', record.item_id)
+
+                    // Atualizar estado local
+                    setItems(prevItems => prevItems.map(i =>
+                        i.id === record.item_id ? { ...i, quantity: newQty, daily_consumption: newAvg } : i
+                    ))
+                    setWithdrawalHistory(prevHist => prevHist.map(h =>
+                        h.id === prev.id ? { ...h, closed_at: null, consumption_per_day_ml: null } : h
+                    ))
+                } else {
+                    // Se não tinha nenhum fechado, apenas atualiza o estoque
+                    setItems(prevItems => prevItems.map(i => i.id === record.item_id ? { ...i, quantity: newQty } : i))
+                }
+            } else {
+                // Se o registro deletado JÁ estava fechado, apenas removemos e voltamos o estoque
+                setItems(prevItems => prevItems.map(i => i.id === record.item_id ? { ...i, quantity: newQty } : i))
+            }
+
+            // 3. Apagar o registro
+            const { error } = await supabase.from('ink_withdrawals').delete().eq('id', id)
+            if (error) throw error
+
+            setWithdrawalHistory(prev => prev.filter(h => h.id !== id))
+            showToast('Registro apagado, estoque devolvido e média recalculada.', 'success')
+
+        } catch (error) {
+            console.error('Erro ao deletar:', error)
+            showToast('Erro ao processar exclusão.', 'error')
+        } finally {
+            setLoading(null)
         }
-        setWithdrawalHistory(prev => prev.filter(h => h.id !== id))
-        showToast('Registro apagado.', 'success')
     }
 
     const handleSaveHistoryEdit = async () => {
@@ -420,8 +495,8 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                 </div>
             </div>
 
-            {/* Tabela de Planejamento (Apenas para Tintas, visão Both ou Planning) */}
-            {category === 'tinta' && (viewMode === 'both' || viewMode === 'planning') && filteredItems.length > 0 && (
+            {/* Tabela de Planejamento (Apenas para Tintas e Admin no modo Estoque) */}
+            {category === 'tinta' && isAdmin && (viewMode === 'both' || viewMode === 'planning') && filteredItems.length > 0 && (
                 <div className="card" style={{ marginBottom: '24px', padding: 0, overflow: 'hidden' }}>
                     <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', background: 'rgba(58, 134, 255, 0.05)' }}>
                         <h3 style={{ fontSize: '16px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -542,6 +617,35 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                         <td style={{ padding: '12px 20px', fontSize: '13px', textAlign: 'center', color: hist.closed_at ? 'inherit' : 'var(--text-muted)' }}>
                                             {hist.closed_at ? new Date(hist.closed_at).toLocaleString('pt-BR') : 'Aguardando próxima retirada'}
                                         </td>
+                                        <td style={{ padding: '12px 20px', fontSize: '13px', textAlign: 'center', fontWeight: 600 }}>
+                                            {hist.consumption_per_day_ml ? `${hist.consumption_per_day_ml} ml` : '—'}
+                                        </td>
+                                        <td style={{ padding: '12px 20px', fontSize: '12px', textAlign: 'center' }}>
+                                            <span style={{
+                                                padding: '2px 8px',
+                                                borderRadius: '4px',
+                                                background: hist.closed_at ? 'rgba(46, 204, 113, 0.1)' : 'rgba(52, 152, 219, 0.1)',
+                                                color: hist.closed_at ? 'var(--success)' : 'var(--accent)'
+                                            }}>
+                                                {hist.closed_at ? 'Fechado' : 'Aberto'}
+                                            </span>
+                                        </td>
+                                        {isAdmin && (
+                                            <td style={{ padding: '12px 20px', textAlign: 'center' }}>
+                                                <button
+                                                    className="btn-icon"
+                                                    onClick={() => {
+                                                        setEditingHistoryId(hist.id);
+                                                        setHistoryEditForm({
+                                                            ...hist,
+                                                            created_at: new Date(hist.created_at).toISOString().slice(0, 16),
+                                                            closed_at: hist.closed_at ? new Date(hist.closed_at).toISOString().slice(0, 16) : ''
+                                                        });
+                                                    }}
+                                                >✏️</button>
+                                                <button className="btn-icon" style={{ marginLeft: '8px' }} onClick={() => handleDeleteHistory(hist.id)}>🗑️</button>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>

@@ -20,13 +20,17 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
         title: 'Gerenciamento de Usuários',
         subtitle: 'Administre os usuários e permissões do sistema',
     },
+    '/dashboard/ajuda': {
+        title: 'Ajuda e Guia de Uso',
+        subtitle: 'Entenda como utilizar cada recurso do PlasPrint Manutenção',
+    },
 }
 
 export function Header({ profile }: HeaderProps) {
     const pathname = usePathname()
     const pageInfo = PAGE_TITLES[pathname] || {
-        title: 'Dashboard',
-        subtitle: 'PlasPrint Manutenção',
+        title: pathname === '/dashboard/consumo-tintas' ? 'Consumo de Tinta' : 'Dashboard',
+        subtitle: pathname === '/dashboard/consumo-tintas' ? 'Registre as retiradas de tinta do estoque.' : 'PlasPrint Manutenção',
     }
 
 

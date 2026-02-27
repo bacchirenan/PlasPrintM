@@ -36,13 +36,6 @@ export default async function GeralDashboardPage() {
 
     return (
         <div className="page-container">
-            <header className="page-header">
-                <div className="page-header-title">
-                    <h1>Dashboard Geral</h1>
-                    <p>Visão consolidada da manutenção e estoque.</p>
-                </div>
-            </header>
-
             <DashboardClient
                 machines={sortedMachines}
                 items={(items as MaintenanceItem[]) || []}
