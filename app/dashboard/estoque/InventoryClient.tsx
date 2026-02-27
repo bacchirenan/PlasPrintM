@@ -571,7 +571,10 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                             </thead>
                             <tbody>
                                 {filteredItems.map(item => {
-                                    const isLowStock = item.min_quantity !== null && item.quantity <= item.min_quantity
+                                    const specialNames = ['pressão negativa', 'servo', 'stepper drive']
+                                    const isSpecialItem = category === 'peca' && item.name && specialNames.some(sn => item.name.toLowerCase().includes(sn))
+                                    const threshold = isSpecialItem ? 0 : item.min_quantity
+                                    const isLowStock = threshold !== null && item.quantity <= threshold
 
                                     return (
                                         <tr key={item.id} style={{ borderTop: '1px solid var(--border)' }}>
@@ -605,7 +608,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                                 <div style={{ fontWeight: 600 }}>{item.name}</div>
                                                 {isLowStock && (
                                                     <span style={{ fontSize: '10px', color: 'var(--danger)', background: 'rgba(230, 57, 70, 0.1)', padding: '2px 6px', borderRadius: '4px', marginTop: '4px', display: 'inline-block' }}>
-                                                        ⚠️ Estoque Baixo (Mín: {item.min_quantity})
+                                                        ⚠️ Estoque Baixo (Mín: {threshold})
                                                     </span>
                                                 )}
                                             </td>

@@ -21,9 +21,120 @@ interface ChecklistClientProps {
  * Só entra em atraso após `frequencyDays` dias desde a última conclusão.
  * Itens nunca realizados (lastLog = null) ficam em atraso imediatamente.
  */
-function isItemOverdue(lastLog: MaintenanceLog | null, frequencyDays: number): boolean {
+/**
+ * Verifica se o item está em atraso.
+ */
+function isItemOverdue(lastLog: MaintenanceLog | null, frequencyDays: number, frequency: string): boolean {
     if (!lastLog) return true
+
     const lastDate = new Date(lastLog.completed_at)
+    const now = new Date()
+
+    if (frequency === 'weekly' || frequency === 'biweekly') {
+        const day = now.getDay() // 0-6
+        const hour = now.getHours()
+
+        if (frequency === 'weekly') {
+            let lastFriday22h = new Date(now)
+            let diff = day === 5 ? (hour >= 22 ? 0 : 7) : (day === 6 ? 1 : day + 2)
+            lastFriday22h.setDate(now.getDate() - diff)
+            lastFriday22h.setHours(22, 0, 0, 0)
+            return lastDate < lastFriday22h
+        }
+
+        if (frequency === 'biweekly') {
+            // A cada 1º e 3º sábado. Reinicia na sexta anterior às 22h.
+            // Precisamos encontrar a sexta anterior mais próxima que precede o 1º ou 3º sábado.
+            const getRefFridays = (date: Date) => {
+                const year = date.getFullYear()
+                const month = date.getMonth()
+                const fridays = []
+                // Buscar todas as sextas do mês
+                for (let d = 1; d <= 31; d++) {
+                    const temp = new Date(year, month, d, 22, 0, 0)
+                    if (temp.getMonth() !== month) break
+                    if (temp.getDay() === 5) { // Sexta
+                        const sat = new Date(temp)
+                        sat.setDate(sat.getDate() + 1)
+                        // Verificamos se o sábado seguinte é o 1º ou 3º do mês
+                        const dayOfMonth = sat.getDate()
+                        const nthSat = Math.ceil(dayOfMonth / 7)
+                        if (nthSat === 1 || nthSat === 3) fridays.push(new Date(temp))
+                    }
+                }
+                return fridays
+            }
+
+            const currentMonthFridays = getRefFridays(now)
+            const prevMonthDate = new Date(now); prevMonthDate.setMonth(now.getMonth() - 1)
+            const prevMonthFridays = getRefFridays(prevMonthDate)
+            const allFridays = [...prevMonthFridays, ...currentMonthFridays].sort((a, b) => b.getTime() - a.getTime())
+
+            // A sexta de referência é a mais recente que já passou (ou é agora se for sexta > 22h)
+            const refFriday = allFridays.find(f => f <= now)
+            return refFriday ? lastDate < refFriday : true
+        }
+
+        if (frequency === 'quarterly') {
+            // 1º Sábado de Março (3), Junho (6) e Novembro (11). Reinicia na sexta anterior às 22h.
+            const getQuarterlyFridays = (date: Date) => {
+                const year = date.getFullYear()
+                const targetMonths = [2, 5, 10] // Meses 0-indexed: Março(2), Junho(5), Novembro(10)
+                const fridays = []
+
+                for (const month of targetMonths) {
+                    // Verificamos o ano atual e o anterior para garantir que pegamos a última referência
+                    for (const offsetYear of [year - 1, year]) {
+                        for (let d = 1; d <= 7; d++) {
+                            const temp = new Date(offsetYear, month, d, 22, 0, 0)
+                            if (temp.getDay() === 5) { // Sexta
+                                const sat = new Date(temp)
+                                sat.setDate(sat.getDate() + 1)
+                                if (sat.getDate() <= 7) { // Certifica que é o 1º sábado
+                                    fridays.push(new Date(temp))
+                                }
+                            }
+                        }
+                    }
+                }
+                return fridays.sort((a, b) => b.getTime() - a.getTime())
+            }
+
+            const quarterlyFridays = getQuarterlyFridays(now)
+            const refFriday = quarterlyFridays.find(f => f <= now)
+            return refFriday ? lastDate < refFriday : true
+        }
+
+        if (frequency === 'semiannual') {
+            // 1º Sábado de Fevereiro (2) e Agosto (8). Reinicia na sexta anterior às 22h.
+            const getSemiannualFridays = (date: Date) => {
+                const year = date.getFullYear()
+                const targetMonths = [1, 7] // Meses 0-indexed: Fevereiro(1), Agosto(7)
+                const fridays = []
+
+                for (const month of targetMonths) {
+                    for (const offsetYear of [year - 1, year]) {
+                        for (let d = 1; d <= 7; d++) {
+                            const temp = new Date(offsetYear, month, d, 22, 0, 0)
+                            if (temp.getDay() === 5) { // Sexta
+                                const sat = new Date(temp)
+                                sat.setDate(sat.getDate() + 1)
+                                if (sat.getDate() <= 7) { // 1º sábado
+                                    fridays.push(new Date(temp))
+                                }
+                            }
+                        }
+                    }
+                }
+                return fridays.sort((a, b) => b.getTime() - a.getTime())
+            }
+
+            const semiannualFridays = getSemiannualFridays(now)
+            const refFriday = semiannualFridays.find(f => f <= now)
+            return refFriday ? lastDate < refFriday : true
+        }
+    }
+
     const diffDays = (Date.now() - lastDate.getTime()) / (1000 * 60 * 60 * 24)
     return diffDays > frequencyDays
 }
@@ -110,6 +221,13 @@ export function ChecklistClient({
                     ))
                 }
             )
+            .on(
+                'postgres_changes',
+                { event: 'DELETE', schema: 'public', table: 'maintenance_logs' },
+                (payload) => {
+                    setLogs(prev => prev.filter(l => l.id !== payload.old.id))
+                }
+            )
             .subscribe()
 
         return () => {
@@ -139,7 +257,7 @@ export function ChecklistClient({
         const category = categories.find(c => c.id === item.category_id)
 
         // Se já foi concluído e ainda está no período, bloqueia nova marcação
-        if (existingLog && category && !isItemOverdue(existingLog, category.frequency_days)) {
+        if (existingLog && category && !isItemOverdue(existingLog, category.frequency_days, category.frequency)) {
             const diasRestantes = Math.ceil(
                 category.frequency_days - (Date.now() - new Date(existingLog.completed_at).getTime()) / (1000 * 60 * 60 * 24)
             )
@@ -214,6 +332,42 @@ export function ChecklistClient({
         }
     }, [supabase, profile, categories, getLatestLog, isMaster, pendingRatings, pendingObs, showToast])
 
+    // ─── Desmarcar item (Uncheck) ────────────────────────────────────────────
+    const handleUncheck = useCallback(async (item: MaintenanceItem, machine: Machine) => {
+        const key = `${machine.id}__${item.id}`
+        const lastLog = getLatestLog(machine.id, item.id)
+
+        if (!lastLog) return
+
+        // Só permite desmarcar se for Master/Admin ou se foi o próprio usuário que marcou
+        if (!isMaster && lastLog.user_id !== profile.id) {
+            showToast('Você não tem permissão para desmarcar este item.', 'error')
+            return
+        }
+
+        if (!confirm(`Deseja realmente desmarcar "${item.name}"?\nO registro realizado em ${new Date(lastLog.completed_at).toLocaleString()} será excluído.`)) {
+            return
+        }
+
+        setLoadingItem(key)
+
+        const { error } = await supabase
+            .from('maintenance_logs')
+            .delete()
+            .eq('id', lastLog.id)
+
+        if (error) {
+            console.error('Erro ao deletar log:', error)
+            showToast('Erro ao desmarcar item.', 'error')
+            setLoadingItem(null)
+            return
+        }
+
+        setLogs(prev => prev.filter(l => l.id !== lastLog.id))
+        setLoadingItem(null)
+        showToast(`✓ Registro de ${item.name} removido.`, 'success')
+    }, [supabase, profile, isMaster, getLatestLog, showToast])
+
     // ─── Salvar avaliação em log já existente (somente master) ───────────────
     const handleUpdateLog = useCallback(async (logId: string, itemKey: string) => {
         const rating = pendingRatings[itemKey] || null
@@ -247,7 +401,7 @@ export function ChecklistClient({
         return items.filter(item => {
             const cat = categories.find(c => c.id === item.category_id)
             if (!cat) return false
-            return isItemOverdue(getLatestLog(activeMachine, item.id), cat.frequency_days)
+            return isItemOverdue(getLatestLog(activeMachine, item.id), cat.frequency_days, cat.frequency)
         }).length
     }, [activeMachine, items, categories, getLatestLog])
 
@@ -258,12 +412,6 @@ export function ChecklistClient({
             {/* Tabs de máquinas */}
             <div className="machines-tabs" role="tablist" aria-label="Selecionar máquina">
                 {machines.map(machine => {
-                    const machineOverdue = items.filter(item => {
-                        const cat = categories.find(c => c.id === item.category_id)
-                        if (!cat) return false
-                        return isItemOverdue(getLatestLog(machine.id, item.id), cat.frequency_days)
-                    }).length
-
                     return (
                         <button
                             key={machine.id}
@@ -294,7 +442,7 @@ export function ChecklistClient({
                 const totalItems = categoryItems.length
                 const completedItems = categoryItems.filter(item => {
                     const lastLog = getLatestLog(currentMachine.id, item.id)
-                    return !isItemOverdue(lastLog, category.frequency_days)
+                    return !isItemOverdue(lastLog, category.frequency_days, category.frequency)
                 }).length
                 const percent = Math.round((completedItems / totalItems) * 100)
 
@@ -348,7 +496,7 @@ export function ChecklistClient({
                             <div className="checklist-items" role="list" style={{ padding: '0 20px 20px 20px' }}>
                                 {categoryItems.map(item => {
                                     const lastLog = getLatestLog(currentMachine.id, item.id)
-                                    const overdue = isItemOverdue(lastLog, category.frequency_days)
+                                    const overdue = isItemOverdue(lastLog, category.frequency_days, category.frequency)
                                     const isCompleted = !overdue
                                     const itemKey = `${currentMachine.id}__${item.id}`
                                     const isLoading = loadingItem === itemKey
@@ -366,8 +514,14 @@ export function ChecklistClient({
                                                     type="checkbox"
                                                     id={`chk-${currentMachine.id}-${item.id}`}
                                                     checked={isCompleted}
-                                                    onChange={() => handleCheck(item, currentMachine)}
-                                                    disabled={isLoading || isCompleted}
+                                                    onChange={() => {
+                                                        if (isCompleted) {
+                                                            handleUncheck(item, currentMachine)
+                                                        } else {
+                                                            handleCheck(item, currentMachine)
+                                                        }
+                                                    }}
+                                                    disabled={isLoading}
                                                     aria-label={`Marcar ${item.name} como concluído`}
                                                 />
                                                 <div className="checkbox-visual">

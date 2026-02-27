@@ -44,12 +44,31 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
     const isMaster = profile.role === 'master' || profile.role === 'admin'
 
     const pieceItems = useMemo(() => {
-        if (!pieceSearch) return inventoryItems
-        return inventoryItems.filter(item =>
+        // Filtro Sugerido: Se for uma máquina numérica (28, 29, 180...), buscar por "DACEN".
+        // Caso contrário, buscar pelo nome da máquina no campo 'location'.
+        const itemsToFilter = inventoryItems.filter(item => {
+            const machineNum = currentMachine?.number;
+            const isNumericMachine = machineNum && ['28', '29', '180', '181', '182'].includes(machineNum);
+
+            if (isNumericMachine) {
+                // Para máquinas 28, 29, 180, 181, 182, buscar itens que tenham "DACEN" no local ou nome
+                const loc = (item.location || '').toLowerCase();
+                const name = (item.name || '').toLowerCase();
+                return loc.includes('dacen') || name.includes('dacen');
+            } else {
+                // Para outras máquinas/salas, buscar pelo nome específico da máquina no local
+                const loc = (item.location || '').toLowerCase();
+                const machineName = (currentMachine?.name || '').toLowerCase();
+                return loc.includes(machineName);
+            }
+        });
+
+        if (!pieceSearch) return itemsToFilter
+        return itemsToFilter.filter(item =>
             item.name.toLowerCase().includes(pieceSearch.toLowerCase()) ||
             (item.code && item.code.toLowerCase().includes(pieceSearch.toLowerCase()))
         )
-    }, [inventoryItems, pieceSearch])
+    }, [inventoryItems, pieceSearch, currentMachine])
 
     const fetchInventory = useCallback(async () => {
         const { data, error } = await supabase
@@ -585,7 +604,7 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                             <h3 className="modal-title">{editingId ? 'Editar Ocorrência' : 'Registrar Ocorrência'}</h3>
                             <button className="modal-close" onClick={() => setIsModalOpen(false)}>×</button>
                         </div>
-                        <div className="modal-body">
+                        <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: '8px' }}>
                             <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
                                 {editingId ? 'Atualize os detalhes do registro.' : `Selecione o tipo e descreva o que aconteceu na ${currentMachine?.type === 'room' || isNaN(Number(currentMachine?.number)) ? currentMachine?.name : `Máquina ${currentMachine?.number}`}.`}
                             </p>
@@ -633,7 +652,8 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                                 placeholder="Digite aqui os detalhes da ocorrência..."
                                 style={{
                                     width: '100%',
-                                    minHeight: '150px',
+                                    minHeight: isSelectingPiece ? '80px' : '150px',
+                                    maxHeight: '200px',
                                     background: 'var(--bg-input)',
                                     border: '1px solid var(--border)',
                                     borderRadius: 'var(--radius-md)',
@@ -680,7 +700,7 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                                         onChange={e => setPieceSearch(e.target.value)}
                                         autoFocus
                                     />
-                                    <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '4px' }}>
+                                    <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '4px', background: 'rgba(0,0,0,0.1)' }}>
                                         {pieceItems.map(item => (
                                             <div
                                                 key={item.id}

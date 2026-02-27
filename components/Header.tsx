@@ -13,7 +13,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
         subtitle: 'Gerencie as manutenções preventivas das máquinas',
     },
     '/dashboard/historico': {
-        title: 'Histórico de Manutenção',
+        title: 'Manutenção',
         subtitle: 'Consulte o registro completo de manutenções realizadas',
     },
     '/dashboard/usuarios': {

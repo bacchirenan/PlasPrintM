@@ -24,7 +24,9 @@ Deno.serve(async (req) => {
 
     // 2. Filtrar itens com estoque baixo
     const lowStock = (allItems || []).filter((item: any) => {
-      const min = item.min_quantity || 0
+      const nameLower = (item.name || '').toLowerCase()
+      const isSpecial = ['pressão negativa', 'servo', 'stepper drive'].some(sn => nameLower.includes(sn))
+      const min = isSpecial ? 0 : (item.min_quantity || 0)
       return item.quantity <= min
     })
 
