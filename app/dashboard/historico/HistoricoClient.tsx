@@ -108,7 +108,7 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                     if (!term) return true
                     const desc = (e.description || '').toLowerCase()
                     const type = (e.event_type || '').toLowerCase()
-                    const user = ((e.user as any)?.full_name || '').toLowerCase()
+                    const user = ((e.user as { full_name?: string })?.full_name || '').toLowerCase()
                     return desc.includes(term) || type.includes(term) || user.includes(term)
                 })
                 .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -116,7 +116,7 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
         return result
     }, [localEvents, activeTab, searchText])
 
-    const handleOpenModal = (item?: any, defaultType?: EventType) => {
+    const handleOpenModal = (item?: MachineEvent, defaultType?: EventType) => {
         if (item) {
             setEditingId(item.id)
             setDescription(item.description || '')
@@ -148,8 +148,9 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
             const { data: { publicUrl } } = supabase.storage.from('attachments').getPublicUrl(filePath)
             setImageUrl(publicUrl)
             showToast('Imagem carregada!', 'success')
-        } catch (error: any) {
-            showToast('Erro ao carregar imagem: ' + error.message, 'error')
+        } catch (error: unknown) {
+            const err = error as Error
+            showToast('Erro ao carregar imagem: ' + err.message, 'error')
         } finally {
             setUploading(false)
         }
@@ -174,8 +175,9 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
             if (error) throw error
             setLocalEvents(prev => prev.filter(e => e.id !== id))
             showToast('Registro removido com sucesso!', 'success')
-        } catch (error: any) {
-            showToast('Erro ao excluir: ' + error.message, 'error')
+        } catch (error: unknown) {
+            const err = error as Error
+            showToast('Erro ao excluir: ' + err.message, 'error')
         }
     }
 
@@ -223,8 +225,9 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                 showToast('Registro realizado com sucesso!', 'success')
             }
             setDescription(''); setImageUrl(''); setSelectedItemId(null); setQuantityUsed(1); setEditingId(null); setIsModalOpen(false)
-        } catch (error: any) {
-            let errorMsg = error?.message || JSON.stringify(error)
+        } catch (error: unknown) {
+            const err = error as { message?: string }
+            const errorMsg = err?.message || JSON.stringify(err)
             showToast('Erro ao salvar: ' + errorMsg, 'error')
         } finally {
             setIsSaving(false)
@@ -323,7 +326,7 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                                         {events.map((e) => {
                                             const piece = e.inventory_item_id ? inventoryItems.find(i => i.id === e.inventory_item_id) : null
                                             const isPartChange = e.event_type === 'part_change'
-                                            const user = (e.user as any)?.full_name || 'Usuário'
+                                            const user = (e.user as { full_name?: string })?.full_name || 'Usuário'
                                             return (
                                                 <div key={e.id} style={{
                                                     background: 'rgba(255,255,255,0.02)',
@@ -413,7 +416,7 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                             <select
                                 value={modalEventType}
                                 onChange={e => {
-                                    const val = e.target.value as any
+                                    const val = e.target.value as EventType
                                     setModalEventType(val)
                                     if (val !== 'maintenance') { setSelectedItemId(null); setIsSelectingPiece(false) }
                                 }}

@@ -5,6 +5,19 @@ import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/ToastProvider'
 import type { InventoryItem } from '@/lib/types'
 
+interface InkWithdrawal {
+    id: string
+    item_id: string
+    quantity_liters: number
+    created_at: string
+    closed_at: string | null
+    consumption_per_day_ml: number | null
+    inventory_items?: {
+        name: string
+        code: string | null
+    }
+}
+
 interface InventoryClientProps {
     initialItems: InventoryItem[]
     category: 'peca' | 'tinta'
@@ -25,9 +38,9 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
     const [editForm, setEditForm] = useState<Partial<InventoryItem>>({})
     const [isWithdrawing, setIsWithdrawing] = useState(false)
     const [withdrawals, setWithdrawals] = useState([{ itemId: '', bottles: 1 }])
-    const [withdrawalHistory, setWithdrawalHistory] = useState<any[]>([])
+    const [withdrawalHistory, setWithdrawalHistory] = useState<InkWithdrawal[]>([])
     const [editingHistoryId, setEditingHistoryId] = useState<string | null>(null)
-    const [historyEditForm, setHistoryEditForm] = useState<any>({})
+    const [historyEditForm, setHistoryEditForm] = useState<Partial<InkWithdrawal>>({})
     const [selectedImage, setSelectedImage] = useState<string | null>(null)
 
     useEffect(() => {
@@ -50,7 +63,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
         )
     }, [items, searchTerm])
 
-    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean = false) => {
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (!file) return
 
@@ -253,7 +266,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
 
             let updatedConsumption = item.daily_consumption
             let closedRecordId: string | null = null
-            let closedRecordData: any = null
+            let closedRecordData: Partial<InkWithdrawal> | null = null
 
             // 1. Fechar ciclo anterior
             const { data: previous, error: fError } = await supabase
@@ -430,12 +443,12 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
         if (!editingHistoryId) return
         setLoading(editingHistoryId)
 
-        const payload: any = {
+        const payload: Partial<InkWithdrawal> = {
             quantity_liters: historyEditForm.quantity_liters,
             created_at: historyEditForm.created_at,
         }
-        if (historyEditForm.closed_at !== undefined) payload.closed_at = historyEditForm.closed_at
-        if (historyEditForm.consumption_per_day_ml !== undefined) payload.consumption_per_day_ml = historyEditForm.consumption_per_day_ml
+        if (historyEditForm.closed_at !== undefined) payload.closed_at = historyEditForm.closed_at as string | null
+        if (historyEditForm.consumption_per_day_ml !== undefined) payload.consumption_per_day_ml = historyEditForm.consumption_per_day_ml as number | null
 
         const { error } = await supabase
             .from('ink_withdrawals')
@@ -1047,7 +1060,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                         className="observation-input"
                                         style={{ margin: 0 }}
                                         value={historyEditForm.quantity_liters || 0}
-                                        onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, quantity_liters: parseFloat(e.target.value) || 0 }))}
+                                        onChange={e => setHistoryEditForm((prev) => ({ ...prev, quantity_liters: parseFloat(e.target.value) || 0 }))}
                                     />
                                 </div>
                                 <div>
@@ -1057,7 +1070,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                         className="observation-input"
                                         style={{ margin: 0 }}
                                         value={historyEditForm.created_at || ''}
-                                        onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, created_at: e.target.value }))}
+                                        onChange={e => setHistoryEditForm((prev) => ({ ...prev, created_at: e.target.value }))}
                                     />
                                 </div>
                                 <div>
@@ -1067,9 +1080,9 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                         className="observation-input"
                                         style={{ margin: 0 }}
                                         value={historyEditForm.closed_at || ''}
-                                        onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, closed_at: e.target.value || null }))}
+                                        onChange={e => setHistoryEditForm((prev) => ({ ...prev, closed_at: e.target.value || null }))}
                                     />
-                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>Deixe vazio se o ciclo ainda estiver "Aberto".</span>
+                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>Deixe vazio se o ciclo ainda estiver &quot;Aberto&quot;.</span>
                                 </div>
                                 <div>
                                     <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Média de Consumo (ml/dia)</label>
@@ -1079,7 +1092,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                         className="observation-input"
                                         style={{ margin: 0 }}
                                         value={historyEditForm.consumption_per_day_ml || ''}
-                                        onChange={e => setHistoryEditForm((prev: any) => ({ ...prev, consumption_per_day_ml: e.target.value ? parseFloat(e.target.value) : null }))}
+                                        onChange={e => setHistoryEditForm((prev) => ({ ...prev, consumption_per_day_ml: e.target.value ? parseFloat(e.target.value) : null }))}
                                     />
                                 </div>
                             </div>

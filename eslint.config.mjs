@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "supabase/**",
+    "check.js",
+    "run_sql.ts",
   ]),
 ]);
 

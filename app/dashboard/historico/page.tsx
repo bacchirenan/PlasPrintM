@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { HistoricoClient } from './HistoricoClient'
-import type { MaintenanceLog, Machine, Profile } from '@/lib/types'
+import type { Machine, Profile, MachineEvent } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,7 +55,7 @@ export default async function HistoricoPage() {
         <HistoricoClient
             profile={profile}
             machines={sortedMachines as Machine[]}
-            events={(events || []) as any[]}
+            events={(events || []) as MachineEvent[]}
         />
     )
 }

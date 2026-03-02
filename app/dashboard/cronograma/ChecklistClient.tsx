@@ -36,8 +36,8 @@ function isItemOverdue(lastLog: MaintenanceLog | null, frequencyDays: number, fr
         const hour = now.getHours()
 
         if (frequency === 'weekly') {
-            let lastFriday22h = new Date(now)
-            let diff = day === 5 ? (hour >= 22 ? 0 : 7) : (day === 6 ? 1 : day + 2)
+            const lastFriday22h = new Date(now)
+            const diff = day === 5 ? (hour >= 22 ? 0 : 7) : (day === 6 ? 1 : day + 2)
             lastFriday22h.setDate(now.getDate() - diff)
             lastFriday22h.setHours(22, 0, 0, 0)
             return lastDate < lastFriday22h
@@ -170,9 +170,10 @@ export function ChecklistClient({
     // Atualizar máquina ativa se o parâmetro na URL mudar
     useEffect(() => {
         if (machineIdFromUrl && machineIdFromUrl !== activeMachine) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setActiveMachine(machineIdFromUrl)
         }
-    }, [machineIdFromUrl])
+    }, [machineIdFromUrl, activeMachine])
 
     const isMaster = profile.role === 'master' || profile.role === 'admin'
 
@@ -431,14 +432,6 @@ export function ChecklistClient({
 
     const currentMachine = machines.find(m => m.id === activeMachine)
 
-    const overdueCount = useMemo(() => {
-        if (!activeMachine) return 0
-        return items.filter(item => {
-            const cat = categories.find(c => c.id === item.category_id)
-            if (!cat) return false
-            return isItemOverdue(getLatestLog(activeMachine, item.id), cat.frequency_days, cat.frequency)
-        }).length
-    }, [activeMachine, items, categories, getLatestLog])
 
     return (
         <div>
@@ -474,7 +467,7 @@ export function ChecklistClient({
                 .map(category => {
                     const categoryItems = items.filter(i => {
                         const isCorrectCategory = i.category_id === category.id
-                        const isCorrectTarget = i.target_type === 'both' || i.target_type === (currentMachine as any).type
+                        const isCorrectTarget = i.target_type === 'both' || i.target_type === currentMachine.type
                         if (!isCorrectCategory || !isCorrectTarget) return false
 
                         // Lógica específica para a Encabeçadora na categoria Semanal
@@ -655,7 +648,7 @@ export function ChecklistClient({
                                                                 </div>
                                                                 {lastLog.observation && (
                                                                     <div style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                                                                        " {lastLog.observation} "
+                                                                        &quot; {lastLog.observation} &quot;
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -712,19 +705,3 @@ export function ChecklistClient({
     )
 }
 
-function SummaryCard({ label, value, icon, color }: {
-    label: string
-    value: string
-    icon: string
-    color: string
-}) {
-    return (
-        <div className="card" style={{ padding: '16px 20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-                <span style={{ fontSize: '20px' }}>{icon}</span>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500 }}>{label}</span>
-            </div>
-            <div style={{ fontSize: '26px', fontWeight: 800, color }}>{value}</div>
-        </div>
-    )
-}

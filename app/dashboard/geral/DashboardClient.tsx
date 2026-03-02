@@ -1,9 +1,8 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import type { Machine, MaintenanceItem, MaintenanceLog, InventoryItem } from '@/lib/types'
-import { FREQUENCY_LABELS } from '@/lib/types'
 
 interface DashboardClientProps {
     machines: Machine[]
@@ -27,7 +26,7 @@ export function DashboardClient({ machines, items, logs, inventory }: DashboardC
         return map
     }, [logs])
 
-    const getIsOverdue = (machineId: string, item: MaintenanceItem) => {
+    const getIsOverdue = useCallback((machineId: string, item: MaintenanceItem) => {
         const lastLog = latestLogs[`${machineId}__${item.id}`]
         if (!lastLog) return true
         if (!item.category) return false
@@ -35,7 +34,7 @@ export function DashboardClient({ machines, items, logs, inventory }: DashboardC
         const lastDate = new Date(lastLog.completed_at)
         const diffDays = (Date.now() - lastDate.getTime()) / (1000 * 60 * 60 * 24)
         return diffDays > item.category.frequency_days
-    }
+    }, [latestLogs])
 
     // Métricas Globais
     const stats = useMemo(() => {
@@ -62,7 +61,7 @@ export function DashboardClient({ machines, items, logs, inventory }: DashboardC
             lowStockItems,
             totalCompleted
         }
-    }, [machines, items, latestLogs, inventory, logs])
+    }, [machines, items, getIsOverdue, inventory, logs])
 
     return (
         <div className="dashboard-content">

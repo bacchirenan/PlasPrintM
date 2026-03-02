@@ -26,7 +26,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     },
 }
 
-export function Header({ profile }: HeaderProps) {
+export function Header({ }: HeaderProps) {
     const pathname = usePathname()
     const pageInfo = PAGE_TITLES[pathname] || {
         title: pathname === '/dashboard/consumo-tintas' ? 'Consumo de Tinta' : 'Dashboard',

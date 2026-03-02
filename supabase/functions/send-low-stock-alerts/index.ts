@@ -7,7 +7,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 const ALERT_RECIPIENT = Deno.env.get('ALERT_EMAIL') || 'renan.projeto@plasutil.com.br'
 
-Deno.serve(async (req) => {
+Deno.serve(async () => {
   console.log('--- LOG: Iniciando send-low-stock-alerts ---')
 
   try {
@@ -23,6 +23,7 @@ Deno.serve(async (req) => {
     if (itemsError) throw itemsError
 
     // 2. Filtrar itens com estoque baixo
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const lowStock = (allItems || []).filter((item: any) => {
       const nameLower = (item.name || '').toLowerCase()
       const isSpecial = ['pressão negativa', 'servo', 'stepper drive'].some(sn => nameLower.includes(sn))
@@ -64,6 +65,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({ status: 'success', items_found: lowStock.length }), { headers: { 'Content-Type': 'application/json' } })
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error('ERRO FATAL:', error.message)
     return new Response(JSON.stringify({ error: error.message }), {
