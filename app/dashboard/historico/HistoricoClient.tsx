@@ -343,19 +343,17 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                                                             <span style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                                                                 {format(new Date(e.created_at), 'dd/MM/yy HH:mm')}
                                                             </span>
+                                                            <button
+                                                                onClick={() => handleOpenModal(e)}
+                                                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', opacity: 0.6, padding: '2px' }}
+                                                                title="Editar"
+                                                            >✏️</button>
                                                             {isMaster && (
-                                                                <>
-                                                                    <button
-                                                                        onClick={() => handleOpenModal(e)}
-                                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', opacity: 0.6, padding: '2px' }}
-                                                                        title="Editar"
-                                                                    >✏️</button>
-                                                                    <button
-                                                                        onClick={() => handleDeleteOccurrence(e.id)}
-                                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', opacity: 0.6, padding: '2px' }}
-                                                                        title="Apagar"
-                                                                    >🗑️</button>
-                                                                </>
+                                                                <button
+                                                                    onClick={() => handleDeleteOccurrence(e.id)}
+                                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', opacity: 0.6, padding: '2px' }}
+                                                                    title="Apagar"
+                                                                >🗑️</button>
                                                             )}
                                                         </div>
                                                     </div>
