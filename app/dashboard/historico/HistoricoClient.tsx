@@ -41,8 +41,7 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
 
     // Estados para Troca de Peça
     const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([])
-    const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
-    const [quantityUsed, setQuantityUsed] = useState<number>(1)
+    const [selectedParts, setSelectedParts] = useState<{ id: string; quantity: number }[]>([])
     const [isSelectingPiece, setIsSelectingPiece] = useState(false)
     const [pieceSearch, setPieceSearch] = useState('')
 
@@ -90,12 +89,27 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
     // Agrupa os eventos da máquina ativa por tipo
     const eventsByType = useMemo(() => {
         const machineEvents = localEvents.filter(e => e.machine_id === activeTab)
-        const result: Record<string, typeof machineEvents> = {
+
+        const parentEvents = machineEvents.filter(e => !e.description?.startsWith('[LinkedTo:') && !e.description?.includes('Peça adicional vinculada ao registro acima.'))
+        const groupedEvents: (MachineEvent & { extraParts?: MachineEvent[] })[] = [];
+
+        for (const parent of parentEvents) {
+            const extraParts = machineEvents.filter(e =>
+                e.description?.includes(`[LinkedTo:${parent.id}]`) ||
+                (e.description?.includes('Peça adicional vinculada ao registro acima.') &&
+                    e.event_type === parent.event_type && e.user_id === parent.user_id &&
+                    Math.abs(new Date(e.created_at).getTime() - new Date(parent.created_at).getTime()) < 10000)
+            );
+            groupedEvents.push({ ...parent, extraParts });
+        }
+
+        const result: Record<string, typeof groupedEvents> = {
             occurrence: [],
             maintenance: [],
             error: [],
         }
-        for (const e of machineEvents) {
+
+        for (const e of groupedEvents) {
             const mapped = e.event_type === 'part_change' ? 'occurrence' : e.event_type
             if (result[mapped]) result[mapped].push(e)
         }
@@ -116,20 +130,25 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
         return result
     }, [localEvents, activeTab, searchText])
 
-    const handleOpenModal = (item?: MachineEvent, defaultType?: EventType) => {
+    const handleOpenModal = (item?: MachineEvent & { extraParts?: MachineEvent[] }, defaultType?: EventType) => {
         if (item) {
             setEditingId(item.id)
             setDescription(item.description || '')
             setImageUrl(item.image_url || '')
-            setSelectedItemId(item.inventory_item_id || null)
-            setQuantityUsed(item.quantity_used || 1)
+            const parts: { id: string; quantity: number }[] = []
+            if (item.inventory_item_id) parts.push({ id: item.inventory_item_id, quantity: item.quantity_used || 1 })
+            if (item.extraParts) {
+                for (const xp of item.extraParts) {
+                    if (xp.inventory_item_id) parts.push({ id: xp.inventory_item_id, quantity: xp.quantity_used || 1 })
+                }
+            }
+            setSelectedParts(parts)
             setModalEventType(item.event_type === 'part_change' ? 'occurrence' : item.event_type || 'occurrence')
         } else {
             setEditingId(null)
             setDescription('')
             setImageUrl('')
-            setSelectedItemId(null)
-            setQuantityUsed(1)
+            setSelectedParts([])
             setModalEventType(defaultType || 'occurrence')
         }
         setIsSelectingPiece(false)
@@ -156,24 +175,39 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
         }
     }
 
-    const handleDeleteOccurrence = async (id: string) => {
+    const handleDeleteOccurrence = async (id: string, extraParts?: MachineEvent[]) => {
         if (!confirm('Tem certeza que deseja apagar este registro? Se houver troca de peça vinculada, as peças serão estornadas para o estoque.')) return
         try {
             const eventToDelete = localEvents.find(e => e.id === id)
-            if (eventToDelete?.inventory_item_id && (eventToDelete.quantity_used || 0) > 0) {
-                const { data: currentItem, error: fetchError } = await supabase
-                    .from('inventory_items').select('quantity').eq('id', eventToDelete.inventory_item_id).single()
-                if (!fetchError && currentItem) {
-                    const newQuantity = currentItem.quantity + (eventToDelete.quantity_used || 0)
-                    await supabase.from('inventory_items').update({ quantity: newQuantity }).eq('id', eventToDelete.inventory_item_id)
-                    setInventoryItems(prev => prev.map(i =>
-                        i.id === eventToDelete.inventory_item_id ? { ...i, quantity: newQuantity } : i
-                    ))
-                }
+            if (!eventToDelete) return;
+            // Acha dependências se não passadas (caso chamado de outro local)
+            let deps = extraParts
+            if (!deps) {
+                deps = localEvents.filter(e =>
+                    e.description?.includes(`[LinkedTo:${id}]`) ||
+                    (e.description?.includes('Peça adicional vinculada ao registro acima.') &&
+                        e.event_type === eventToDelete.event_type && e.user_id === eventToDelete.user_id &&
+                        Math.abs(new Date(e.created_at).getTime() - new Date(eventToDelete.created_at).getTime()) < 10000)
+                )
             }
-            const { error } = await supabase.from('machine_events').delete().eq('id', id)
-            if (error) throw error
-            setLocalEvents(prev => prev.filter(e => e.id !== id))
+
+            const eventsToDel = [eventToDelete, ...(deps || [])]
+            for (const ev of eventsToDel) {
+                if (ev.inventory_item_id && (ev.quantity_used || 0) > 0) {
+                    const { data: currentItem, error: fetchError } = await supabase
+                        .from('inventory_items').select('quantity').eq('id', ev.inventory_item_id).single()
+                    if (!fetchError && currentItem) {
+                        const newQuantity = currentItem.quantity + (ev.quantity_used || 0)
+                        await supabase.from('inventory_items').update({ quantity: newQuantity }).eq('id', ev.inventory_item_id)
+                        setInventoryItems(prev => prev.map(i =>
+                            i.id === ev.inventory_item_id ? { ...i, quantity: newQuantity } : i
+                        ))
+                    }
+                }
+                const { error } = await supabase.from('machine_events').delete().eq('id', ev.id)
+                if (error) throw error
+            }
+            setLocalEvents(prev => prev.filter(e => !eventsToDel.find(del => del.id === e.id)))
             showToast('Registro removido com sucesso!', 'success')
         } catch (error: unknown) {
             const err = error as Error
@@ -188,43 +222,159 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
         }
         setIsSaving(true)
         try {
-            if (selectedItemId) {
-                const item = inventoryItems.find(i => i.id === selectedItemId)
-                if (item && quantityUsed > item.quantity) {
-                    showToast(`Quantidade insuficiente em estoque. Saldo atual: ${item.quantity}`, 'error')
-                    setIsSaving(false)
-                    return
+            const deltas = new Map<string, number>(); // ID -> Delta (increment/decrement)
+
+            // 1. Calculate Old Quantities (if editing)
+            const existingParent = editingId ? localEvents.find(e => e.id === editingId) : null;
+            const existingExtras = editingId ? localEvents.filter(e =>
+                e.description?.includes(`[LinkedTo:${editingId}]`) ||
+                (e.description?.includes('Peça adicional vinculada ao registro acima.') &&
+                    e.event_type === existingParent?.event_type && e.user_id === existingParent?.user_id &&
+                    Math.abs(new Date(e.created_at).getTime() - new Date(existingParent!.created_at).getTime()) < 10000)
+            ) : [];
+
+            if (existingParent?.inventory_item_id) {
+                const id = existingParent.inventory_item_id;
+                deltas.set(id, (deltas.get(id) || 0) + (existingParent.quantity_used || 0));
+            }
+            for (const ex of existingExtras) {
+                if (ex.inventory_item_id) {
+                    const id = ex.inventory_item_id;
+                    deltas.set(id, (deltas.get(id) || 0) + (ex.quantity_used || 0));
                 }
             }
+
+            // 2. Calculate New Quantities
+            for (const part of selectedParts) {
+                deltas.set(part.id, (deltas.get(part.id) || 0) - part.quantity);
+            }
+
+            // 3. Stock Check (Fresh check against DB + what we are releasing)
+            for (const [itemId, delta] of deltas.entries()) {
+                if (delta < 0) { // We are using more than we had
+                    const { data: dbItem } = await supabase.from('inventory_items').select('name, quantity').eq('id', itemId).single();
+                    if (dbItem) {
+                        if (dbItem.quantity + delta < 0) {
+                            showToast(`Quantidade insuficiente em estoque para ${dbItem.name}. Disponível: ${dbItem.quantity}, Necessário adicional: ${Math.abs(delta)}`, 'error');
+                            setIsSaving(false);
+                            return;
+                        }
+                    }
+                }
+            }
+
             const eventType = modalEventType
+
             if (editingId) {
+                // Delete existing extras FIRST before inserting new ones
+                for (const ex of existingExtras) {
+                    await supabase.from('machine_events').delete().eq('id', ex.id)
+                }
+
+                const part = selectedParts[0]
                 const { data, error } = await supabase
                     .from('machine_events')
-                    .update({ description: description.trim(), image_url: imageUrl, inventory_item_id: selectedItemId, quantity_used: selectedItemId ? quantityUsed : 0, event_type: eventType })
+                    .update({
+                        description: description.trim(),
+                        image_url: imageUrl,
+                        inventory_item_id: part?.id || null,
+                        quantity_used: part ? part.quantity : 0,
+                        event_type: eventType
+                    })
                     .eq('id', editingId)
                     .select('*, user:profiles(id, full_name, email)').single()
                 if (error) throw error
-                setLocalEvents(prev => prev.map(e => e.id === editingId ? data as MachineEvent : e))
-                showToast('Registro atualizado com sucesso!', 'success')
-            } else {
-                const { data, error } = await supabase
-                    .from('machine_events')
-                    .insert({ machine_id: activeTab, user_id: profile.id, event_type: eventType, description: description.trim(), image_url: imageUrl, inventory_item_id: selectedItemId, quantity_used: selectedItemId ? quantityUsed : 0 })
-                    .select('*, user:profiles(id, full_name, email)').single()
-                if (error) throw error
-                if (selectedItemId) {
-                    const selectedItem = inventoryItems.find(i => i.id === selectedItemId)
-                    if (selectedItem) {
-                        await supabase.from('inventory_items').update({ quantity: selectedItem.quantity - quantityUsed }).eq('id', selectedItemId)
-                        setInventoryItems(prev => prev.map(i =>
-                            i.id === selectedItemId ? { ...i, quantity: i.quantity - quantityUsed } : i
-                        ))
+
+                let newEvents: MachineEvent[] = []
+                for (let i = 1; i < selectedParts.length; i++) {
+                    const extraPart = selectedParts[i]
+                    const { data: newData, error: newError } = await supabase
+                        .from('machine_events')
+                        .insert({
+                            machine_id: activeTab,
+                            user_id: profile.id,
+                            event_type: eventType,
+                            description: `[LinkedTo:${editingId}] Peça adicional vinculada ao registro acima.`,
+                            image_url: '',
+                            inventory_item_id: extraPart.id,
+                            quantity_used: extraPart.quantity
+                        })
+                        .select('*, user:profiles(id, full_name, email)').single()
+                    if (newError) throw newError
+                    newEvents.push(newData as MachineEvent)
+                }
+
+                // Apply deltas to DB
+                for (const [itemId, delta] of deltas.entries()) {
+                    if (delta === 0) continue;
+                    const { data: item } = await supabase.from('inventory_items').select('quantity').eq('id', itemId).single();
+                    if (item) {
+                        await supabase.from('inventory_items').update({ quantity: item.quantity + delta }).eq('id', itemId);
                     }
                 }
-                setLocalEvents(prev => [data as MachineEvent, ...prev])
+
+                await fetchInventory()
+                setLocalEvents(prev => {
+                    const clean = prev.filter(e => e.id !== editingId && !existingExtras.find(ex => ex.id === e.id))
+                    return [data as MachineEvent, ...newEvents, ...clean]
+                })
+                showToast('Registro atualizado com sucesso!', 'success')
+            } else {
+                const newEvents: MachineEvent[] = []
+                let rootId = '';
+
+                if (selectedParts.length === 0) {
+                    const { data, error } = await supabase
+                        .from('machine_events')
+                        .insert({
+                            machine_id: activeTab,
+                            user_id: profile.id,
+                            event_type: eventType,
+                            description: description.trim(),
+                            image_url: imageUrl,
+                            inventory_item_id: null,
+                            quantity_used: 0
+                        })
+                        .select('*, user:profiles(id, full_name, email)').single()
+                    if (error) throw error
+                    newEvents.push(data as MachineEvent)
+                } else {
+                    for (let i = 0; i < selectedParts.length; i++) {
+                        const part = selectedParts[i]
+                        const isFirst = i === 0
+
+                        const { data, error } = await supabase
+                            .from('machine_events')
+                            .insert({
+                                machine_id: activeTab,
+                                user_id: profile.id,
+                                event_type: eventType,
+                                description: isFirst ? description.trim() : `[LinkedTo:${rootId}] Peça adicional vinculada ao registro acima.`,
+                                image_url: isFirst ? imageUrl : '',
+                                inventory_item_id: part.id,
+                                quantity_used: part.quantity
+                            })
+                            .select('*, user:profiles(id, full_name, email)').single()
+                        if (error) throw error
+                        if (isFirst) rootId = data.id;
+                        newEvents.push(data as MachineEvent)
+                    }
+                }
+
+                // Apply deltas to DB
+                for (const [itemId, delta] of deltas.entries()) {
+                    if (delta === 0) continue;
+                    const { data: item } = await supabase.from('inventory_items').select('quantity').eq('id', itemId).single();
+                    if (item) {
+                        await supabase.from('inventory_items').update({ quantity: item.quantity + delta }).eq('id', itemId);
+                    }
+                }
+
+                await fetchInventory() // sync total
+                setLocalEvents(prev => [...newEvents, ...prev])
                 showToast('Registro realizado com sucesso!', 'success')
             }
-            setDescription(''); setImageUrl(''); setSelectedItemId(null); setQuantityUsed(1); setEditingId(null); setIsModalOpen(false)
+            setDescription(''); setImageUrl(''); setSelectedParts([]); setEditingId(null); setIsModalOpen(false)
         } catch (error: unknown) {
             const err = error as { message?: string }
             const errorMsg = err?.message || JSON.stringify(err)
@@ -327,6 +477,15 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                                             const piece = e.inventory_item_id ? inventoryItems.find(i => i.id === e.inventory_item_id) : null
                                             const isPartChange = e.event_type === 'part_change'
                                             const user = (e.user as { full_name?: string })?.full_name || 'Usuário'
+
+                                            const allPiecesOfEvent = piece ? [{ item: piece, qty: e.quantity_used }] : [];
+                                            if (e.extraParts) {
+                                                for (const xp of e.extraParts) {
+                                                    const xpPiece = xp.inventory_item_id ? inventoryItems.find(i => i.id === xp.inventory_item_id) : null;
+                                                    if (xpPiece) allPiecesOfEvent.push({ item: xpPiece, qty: xp.quantity_used });
+                                                }
+                                            }
+
                                             return (
                                                 <div key={e.id} style={{
                                                     background: 'rgba(255,255,255,0.02)',
@@ -353,7 +512,7 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                                                             >✏️</button>
                                                             {isMaster && (
                                                                 <button
-                                                                    onClick={() => handleDeleteOccurrence(e.id)}
+                                                                    onClick={() => handleDeleteOccurrence(e.id, e.extraParts)}
                                                                     style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', opacity: 0.6, padding: '2px' }}
                                                                     title="Apagar"
                                                                 >🗑️</button>
@@ -375,9 +534,13 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                                                         </div>
                                                     )}
 
-                                                    {piece && (
-                                                        <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--success)', fontWeight: 600 }}>
-                                                            ⚙️ {piece.name} ({e.quantity_used} un)
+                                                    {allPiecesOfEvent.length > 0 && (
+                                                        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                            {allPiecesOfEvent.map((p, idx) => (
+                                                                <div key={idx} style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 600 }}>
+                                                                    ⚙️ {p.item.name} ({p.qty} un)
+                                                                </div>
+                                                            ))}
                                                         </div>
                                                     )}
 
@@ -418,7 +581,7 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                                 onChange={e => {
                                     const val = e.target.value as EventType
                                     setModalEventType(val)
-                                    if (val !== 'maintenance') { setSelectedItemId(null); setIsSelectingPiece(false) }
+                                    if (val !== 'maintenance') { setSelectedParts([]); setIsSelectingPiece(false) }
                                 }}
                                 style={{
                                     width: '100%', padding: '10px 12px',
@@ -426,12 +589,12 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                                     borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
                                     fontSize: '14px', outline: 'none', marginBottom: '16px', cursor: 'pointer'
                                 }}
-                                disabled={!!selectedItemId}
+                                disabled={selectedParts.length > 0}
                             >
                                 <option value="occurrence">Ocorrência</option>
                                 <option value="maintenance">Manutenção de Máquina</option>
                                 <option value="error">Erro</option>
-                                {selectedItemId && <option value="part_change">Troca de Peça</option>}
+                                {selectedParts.length > 0 && <option value="part_change">Troca de Peça</option>}
                             </select>
 
                             <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase' }}>
@@ -458,10 +621,10 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                                 {modalEventType === 'maintenance' && (
                                     <button
                                         className="btn-secondary"
-                                        style={{ fontSize: '12px', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'center', border: selectedItemId ? '1px solid var(--primary-accent)' : '1px solid var(--border)' }}
+                                        style={{ fontSize: '12px', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'center', border: selectedParts.length > 0 ? '1px solid var(--primary-accent)' : '1px solid var(--border)' }}
                                         onClick={() => setIsSelectingPiece(!isSelectingPiece)}
                                     >
-                                        ⚙️ {selectedItemId ? 'Trocar Peça' : 'Troca de Peça'}
+                                        ⚙️ {selectedParts.length > 0 ? 'Adicionar mais peças' : 'Adicionar Peça'}
                                     </button>
                                 )}
                             </div>
@@ -481,11 +644,17 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                                         {pieceItems.map(item => (
                                             <div
                                                 key={item.id}
-                                                onClick={() => { setSelectedItemId(item.id); setIsSelectingPiece(false) }}
+                                                onClick={() => {
+                                                    setSelectedParts(prev => {
+                                                        if (prev.find(p => p.id === item.id)) return prev;
+                                                        return [...prev, { id: item.id, quantity: 1 }];
+                                                    });
+                                                    setIsSelectingPiece(false);
+                                                }}
                                                 style={{
                                                     padding: '8px 12px', fontSize: '13px', cursor: 'pointer',
                                                     borderBottom: '1px solid var(--border)',
-                                                    background: selectedItemId === item.id ? 'rgba(58, 134, 255, 0.1)' : 'transparent',
+                                                    background: selectedParts.find(p => p.id === item.id) ? 'rgba(58, 134, 255, 0.1)' : 'transparent',
                                                     display: 'flex', alignItems: 'center', gap: '12px'
                                                 }}
                                             >
@@ -514,42 +683,52 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                                 </div>
                             )}
 
-                            {selectedItemId && !isSelectingPiece && (
-                                <div style={{
-                                    marginBottom: '16px', padding: '12px',
-                                    background: 'rgba(58, 134, 255, 0.05)', border: '1px solid var(--primary-accent)',
-                                    borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px'
-                                }}>
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--primary-accent)', fontWeight: 800, marginBottom: '2px' }}>Peça Selecionada</div>
-                                        <div style={{ fontSize: '14px', fontWeight: 600 }}>{inventoryItems.find(i => i.id === selectedItemId)?.name}</div>
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <div style={{ textAlign: 'right', marginRight: '8px' }}>
-                                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Disponível</div>
-                                            <div style={{ fontSize: '12px', fontWeight: 700, color: (inventoryItems.find(i => i.id === selectedItemId)?.quantity || 0) < quantityUsed ? 'var(--danger)' : 'var(--success)' }}>
-                                                {inventoryItems.find(i => i.id === selectedItemId)?.quantity || 0} un
+                            {selectedParts.length > 0 && !isSelectingPiece && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                                    {selectedParts.map((part, index) => {
+                                        const invItem = inventoryItems.find(i => i.id === part.id)
+                                        return (
+                                            <div key={part.id} style={{
+                                                padding: '12px',
+                                                background: 'rgba(58, 134, 255, 0.05)', border: '1px solid var(--primary-accent)',
+                                                borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px'
+                                            }}>
+                                                <div style={{ flex: 1 }}>
+                                                    <div style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--primary-accent)', fontWeight: 800, marginBottom: '2px' }}>Peça Selecionada {index + 1}</div>
+                                                    <div style={{ fontSize: '14px', fontWeight: 600 }}>{invItem?.name}</div>
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <div style={{ textAlign: 'right', marginRight: '8px' }}>
+                                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Disponível</div>
+                                                        <div style={{ fontSize: '12px', fontWeight: 700, color: (invItem?.quantity || 0) < part.quantity ? 'var(--danger)' : 'var(--success)' }}>
+                                                            {invItem?.quantity || 0} un
+                                                        </div>
+                                                    </div>
+                                                    <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Qtd:</label>
+                                                    <input
+                                                        type="number"
+                                                        value={part.quantity}
+                                                        onChange={e => {
+                                                            const newQty = Math.max(1, parseInt(e.target.value) || 1)
+                                                            setSelectedParts(prev => prev.map(p => p.id === part.id ? { ...p, quantity: newQty } : p))
+                                                        }}
+                                                        style={{
+                                                            width: '60px', padding: '6px',
+                                                            background: 'var(--bg-card)',
+                                                            border: (invItem?.quantity || 0) < part.quantity ? '2px solid var(--danger)' : '1px solid var(--border)',
+                                                            color: 'var(--text-primary)', borderRadius: '4px',
+                                                            textAlign: 'center', fontSize: '14px', fontWeight: 700
+                                                        }}
+                                                    />
+                                                    <button
+                                                        onClick={() => setSelectedParts(prev => prev.filter(p => p.id !== part.id))}
+                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: 'var(--danger)' }}
+                                                        title="Remover peça"
+                                                    >🗑️</button>
+                                                </div>
                                             </div>
-                                        </div>
-                                        <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Qtd:</label>
-                                        <input
-                                            type="number"
-                                            value={quantityUsed}
-                                            onChange={e => setQuantityUsed(Math.max(1, parseInt(e.target.value) || 1))}
-                                            style={{
-                                                width: '60px', padding: '6px',
-                                                background: 'var(--bg-card)',
-                                                border: (inventoryItems.find(i => i.id === selectedItemId)?.quantity || 0) < quantityUsed ? '2px solid var(--danger)' : '1px solid var(--border)',
-                                                color: 'var(--text-primary)', borderRadius: '4px',
-                                                textAlign: 'center', fontSize: '14px', fontWeight: 700
-                                            }}
-                                        />
-                                        <button
-                                            onClick={() => setSelectedItemId(null)}
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: 'var(--danger)' }}
-                                            title="Remover peça"
-                                        >🗑️</button>
-                                    </div>
+                                        )
+                                    })}
                                 </div>
                             )}
 
