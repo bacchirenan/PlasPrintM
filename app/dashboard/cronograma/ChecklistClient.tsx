@@ -458,9 +458,9 @@ export function ChecklistClient({
             {/* Checklist por categoria */}
             {currentMachine && categories
                 .filter(cat => {
-                    // Remover Semestral (semiannual) e Quinzenal (biweekly) da Encabeçadora
-                    if (currentMachine.number === 'ENCAB_CANUDOS') {
-                        return cat.frequency !== 'semiannual' && cat.frequency !== 'biweekly'
+                    // Remover frequências desnecessárias para máquinas específicas
+                    if (currentMachine.number === 'ENCAB_CANUDOS' || currentMachine.number === 'TRANSFER_CANUDO') {
+                        return cat.frequency === 'weekly' || (currentMachine.number === 'ENCAB_CANUDOS' && cat.frequency === 'quarterly')
                     }
                     return true
                 })
@@ -470,10 +470,14 @@ export function ChecklistClient({
                         const isCorrectTarget = i.target_type === 'both' || i.target_type === currentMachine.type
                         if (!isCorrectCategory || !isCorrectTarget) return false
 
-                        // Lógica específica para a Encabeçadora na categoria Semanal
-                        if (currentMachine.number === 'ENCAB_CANUDOS' && category.frequency === 'weekly') {
-                            // MOSTRAR APENAS ESSES DOIS (EXATAMENTE)
-                            return i.name === 'Limpeza da Máquina' || i.name === 'Verificar Mangueira de Ar'
+                        // Lógica específica para a Encabeçadora e Transfer Canudo na categoria Semanal
+                        if (category.frequency === 'weekly') {
+                            if (currentMachine.number === 'ENCAB_CANUDOS') {
+                                return i.name === 'Limpeza da Máquina' || i.name === 'Verificar Mangueira de Ar'
+                            }
+                            if (currentMachine.number === 'TRANSFER_CANUDO') {
+                                return i.name === 'Limpeza da Máquina' || i.name === 'Verificar Rolo de Silicone'
+                            }
                         }
 
                         // Lógica específica para a Encabeçadora na categoria Trimestral
@@ -482,8 +486,11 @@ export function ChecklistClient({
                             return i.name === 'Lubrificar Trilho do Carro'
                         }
 
-                        // Para as OUTRAS máquinas, ESCONDER a Mangueira de Ar
+                        // Esconder itens específicos de outras máquinas
                         if (currentMachine.number !== 'ENCAB_CANUDOS' && i.name === 'Verificar Mangueira de Ar') {
+                            return false
+                        }
+                        if (currentMachine.number !== 'TRANSFER_CANUDO' && i.name === 'Verificar Rolo de Silicone') {
                             return false
                         }
 

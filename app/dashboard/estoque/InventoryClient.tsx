@@ -445,10 +445,10 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
 
         const payload: Partial<InkWithdrawal> = {
             quantity_liters: historyEditForm.quantity_liters,
-            created_at: historyEditForm.created_at,
-        }
-        if (historyEditForm.closed_at !== undefined) payload.closed_at = historyEditForm.closed_at as string | null
-        if (historyEditForm.consumption_per_day_ml !== undefined) payload.consumption_per_day_ml = historyEditForm.consumption_per_day_ml as number | null
+            created_at: historyEditForm.created_at || null,
+        } as any
+        if (historyEditForm.closed_at !== undefined) payload.closed_at = historyEditForm.closed_at || null
+        if (historyEditForm.consumption_per_day_ml !== undefined) payload.consumption_per_day_ml = historyEditForm.consumption_per_day_ml ?? null
 
         const { error } = await supabase
             .from('ink_withdrawals')
@@ -606,7 +606,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                             📋 Histórico de Retiradas e Consumo
                         </h3>
                     </div>
-                    <div style={{ overflowX: 'auto', maxHeight: '400px' }}>
+                    <div style={{ overflowX: 'auto', maxHeight: '750px' }}>
                         <table className="inventory-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                             <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--card-bg)' }}>
                                 <tr style={{ background: 'rgba(255,255,255,0.02)', textAlign: 'left' }}>
@@ -950,7 +950,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto', paddingRight: '8px' }}>
                                 {withdrawals.map((withdrawal, index) => (
-                                    <div key={index} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) auto auto', gap: '12px', alignItems: 'flex-end', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                                    <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px', alignItems: 'flex-end', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
                                         <div>
                                             <label style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Tinta</label>
                                             <select
@@ -965,37 +965,11 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                             >
                                                 <option value="">Escolher...</option>
                                                 {items.filter(i => i.category === 'tinta').map(item => (
-                                                    <option key={item.id} value={item.id} disabled={withdrawals.some((w, idx) => w.itemId === item.id && idx !== index)}>
+                                                    <option key={item.id} value={item.id}>
                                                         {item.name}
                                                     </option>
                                                 ))}
                                             </select>
-                                        </div>
-                                        <div>
-                                            <label style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Qtd</label>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '2px 6px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                                                <button
-                                                    className="btn-icon"
-                                                    style={{ width: '24px', height: '24px', fontSize: '14px' }}
-                                                    onClick={() => {
-                                                        const newWithdrawals = [...withdrawals]
-                                                        newWithdrawals[index].bottles = Math.max(1, newWithdrawals[index].bottles - 1)
-                                                        setWithdrawals(newWithdrawals)
-                                                    }}
-                                                >-</button>
-                                                <span style={{ fontSize: '14px', fontWeight: 700, minWidth: '18px', textAlign: 'center' }}>
-                                                    {withdrawal.bottles}
-                                                </span>
-                                                <button
-                                                    className="btn-icon"
-                                                    style={{ width: '24px', height: '24px', fontSize: '14px' }}
-                                                    onClick={() => {
-                                                        const newWithdrawals = [...withdrawals]
-                                                        newWithdrawals[index].bottles += 1
-                                                        setWithdrawals(newWithdrawals)
-                                                    }}
-                                                >+</button>
-                                            </div>
                                         </div>
                                         <div style={{ display: 'flex', gap: '8px' }}>
                                             {index === withdrawals.length - 1 && (
@@ -1064,7 +1038,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                     />
                                 </div>
                                 <div>
-                                    <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Data de Retirada</label>
+                                    <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Data de Retirada (Dia / Mês / Ano)</label>
                                     <input
                                         type="datetime-local"
                                         className="observation-input"
@@ -1074,7 +1048,7 @@ export function InventoryClient({ initialItems, category, userRole, viewMode = '
                                     />
                                 </div>
                                 <div>
-                                    <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Data de Fechamento</label>
+                                    <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Data de Fechamento (Dia / Mês / Ano)</label>
                                     <input
                                         type="datetime-local"
                                         className="observation-input"
