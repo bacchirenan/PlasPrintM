@@ -92,6 +92,38 @@ export function Sidebar({ profile }: SidebarProps) {
         router.refresh()
     }
 
+    const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+
+        try {
+            const fileExt = file.name.split('.').pop()
+            const fileName = `${profile.id}-${Math.random()}.${fileExt}`
+            const filePath = `avatars/${fileName}`
+
+            const { error: uploadError } = await supabase.storage
+                .from('attachments')
+                .upload(filePath, file)
+
+            if (uploadError) throw uploadError
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('attachments')
+                .getPublicUrl(filePath)
+
+            const { error: updateError } = await supabase
+                .from('profiles')
+                .update({ avatar_url: publicUrl, updated_at: new Date().toISOString() })
+                .eq('id', profile.id)
+
+            if (updateError) throw updateError
+
+            router.refresh()
+        } catch (error) {
+            console.error('Erro ao atualizar avatar:', error)
+        }
+    }
+
     const initials = profile.full_name
         ? profile.full_name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
         : profile.email.substring(0, 2).toUpperCase()
@@ -106,15 +138,32 @@ export function Sidebar({ profile }: SidebarProps) {
         <aside className="sidebar" id="sidebar">
             {/* Brand */}
             <div className="sidebar-brand">
-                <div className="sidebar-brand-icon">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div className="sidebar-brand-icon">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                        </svg>
+                    </div>
+                    <div className="sidebar-brand-text">
+                        <h1>PlasPrint</h1>
+                        <span>Manutenção</span>
+                    </div>
+                </div>
+
+                {/* Botão de Fechar (Apenas mobile) */}
+                <button
+                    className="sidebar-close-btn"
+                    onClick={() => {
+                        const sidebar = document.getElementById('sidebar')
+                        if (sidebar) sidebar.classList.remove('open')
+                    }}
+                    aria-label="Fechar menu"
+                >
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
                     </svg>
-                </div>
-                <div className="sidebar-brand-text">
-                    <h1>PlasPrint</h1>
-                    <span>Manutenção</span>
-                </div>
+                </button>
             </div>
 
             {/* Navegação */}
@@ -129,6 +178,10 @@ export function Sidebar({ profile }: SidebarProps) {
                                 id={item.id}
                                 className={`nav-item ${pathname === item.href || pathname.startsWith(item.href) ? 'active' : ''}`}
                                 aria-current={pathname === item.href ? 'page' : undefined}
+                                onClick={() => {
+                                    const sidebar = document.getElementById('sidebar')
+                                    if (sidebar) sidebar.classList.remove('open')
+                                }}
                             >
                                 {item.icon}
                                 {item.label}
@@ -148,6 +201,10 @@ export function Sidebar({ profile }: SidebarProps) {
                             href="/dashboard/usuarios"
                             id="nav-usuarios"
                             className={`nav-item ${pathname === '/dashboard/usuarios' ? 'active' : ''}`}
+                            onClick={() => {
+                                const sidebar = document.getElementById('sidebar')
+                                if (sidebar) sidebar.classList.remove('open')
+                            }}
                         >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -161,6 +218,10 @@ export function Sidebar({ profile }: SidebarProps) {
                             href="/dashboard/tintas"
                             id="nav-tintas"
                             className={`nav-item ${pathname === '/dashboard/tintas' ? 'active' : ''}`}
+                            onClick={() => {
+                                const sidebar = document.getElementById('sidebar')
+                                if (sidebar) sidebar.classList.remove('open')
+                            }}
                         >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" />
@@ -171,6 +232,10 @@ export function Sidebar({ profile }: SidebarProps) {
                             href="/dashboard/estoque"
                             id="nav-estoque"
                             className={`nav-item ${pathname === '/dashboard/estoque' ? 'active' : ''}`}
+                            onClick={() => {
+                                const sidebar = document.getElementById('sidebar')
+                                if (sidebar) sidebar.classList.remove('open')
+                            }}
                         >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
@@ -186,7 +251,44 @@ export function Sidebar({ profile }: SidebarProps) {
             {/* Footer: Usuário logado */}
             <div className="sidebar-footer">
                 <div className="user-card">
-                    <div className="user-avatar" aria-hidden="true">{initials}</div>
+                    <div style={{ position: 'relative' }}>
+                        <div className="user-avatar" aria-hidden="true" style={{ overflow: 'hidden', cursor: 'pointer' }}>
+                            {profile.avatar_url ? (
+                                <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                                initials
+                            )}
+                        </div>
+                        <label
+                            style={{
+                                position: 'absolute',
+                                bottom: '-2px',
+                                right: '-2px',
+                                width: '16px',
+                                height: '16px',
+                                background: 'var(--primary-accent)',
+                                borderRadius: '50%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                border: '2px solid var(--bg-sidebar)',
+                                boxShadow: '0 0 5px rgba(0,0,0,0.5)'
+                            }}
+                            title="Alterar foto"
+                        >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                                <circle cx="12" cy="13" r="4" />
+                            </svg>
+                            <input
+                                type="file"
+                                hidden
+                                accept="image/*"
+                                onChange={handleAvatarUpload}
+                            />
+                        </label>
+                    </div>
                     <div className="user-info">
                         <div className="user-name">
                             {profile.full_name || profile.email.split('@')[0]}

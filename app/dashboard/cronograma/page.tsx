@@ -23,7 +23,7 @@ export default async function CronogramaPage() {
         supabase.from('machines').select('*').eq('active', true).order('number'),
         supabase.from('maintenance_categories').select('*').order('display_order'),
         supabase.from('maintenance_items').select('*, category:maintenance_categories(*)').eq('active', true).order('display_order'),
-        supabase.from('maintenance_logs').select('*, user:profiles(id, full_name, email)').order('completed_at', { ascending: false }),
+        supabase.from('maintenance_logs').select('*, user:profiles(id, full_name, email, avatar_url)').order('completed_at', { ascending: false }),
     ])
 
     const profile: Profile = profileData || {

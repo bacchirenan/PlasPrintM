@@ -520,8 +520,15 @@ export function HistoricoClient({ profile, machines, events: initialEvents }: Hi
                                                         </div>
                                                     </div>
 
-                                                    <div style={{ fontSize: '11px', color: cfg.color, fontWeight: 600, marginBottom: '6px' }}>
-                                                        👤 {user}
+                                                    <div style={{ fontSize: '11px', color: cfg.color, fontWeight: 600, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        <div style={{ width: '18px', height: '18px', borderRadius: '50%', overflow: 'hidden', background: cfg.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', color: 'white' }}>
+                                                            {(e.user as Profile | undefined)?.avatar_url ? (
+                                                                <img src={(e.user as Profile).avatar_url!} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                            ) : (
+                                                                (user[0] || 'U').toUpperCase()
+                                                            )}
+                                                        </div>
+                                                        {user}
                                                     </div>
 
                                                     {e.description && (

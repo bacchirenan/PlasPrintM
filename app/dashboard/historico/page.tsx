@@ -23,7 +23,7 @@ export default async function HistoricoPage() {
             .select(`
                 *,
                 machine:machines(id, name, number),
-                user:profiles(id, full_name, email)
+                user:profiles(id, full_name, email, avatar_url)
             `)
             .order('created_at', { ascending: false })
             .limit(500),
