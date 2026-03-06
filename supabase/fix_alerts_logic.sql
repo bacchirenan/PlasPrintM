@@ -21,6 +21,43 @@ WITH all_machine_items AS (
   CROSS JOIN public.maintenance_items mi
   JOIN public.maintenance_categories mc ON mi.category_id = mc.id
   WHERE m.active = true AND mi.active = true
+  -- 1. Filtrar por target_type (Sala vs Máquina)
+  AND (
+    (mi.target_type = 'both') OR
+    (mi.target_type = 'machine' AND m.type = 'machine') OR
+    (mi.target_type = 'room' AND m.type = 'room')
+  )
+  -- 2. Filtrar itens específicos da Encabeçadora e Transfer Canudo
+  AND (
+    CASE 
+      WHEN m.number = 'ENCAB_CANUDOS' THEN
+        mc.frequency IN ('weekly', 'quarterly') AND
+        (
+          (mc.frequency = 'weekly' AND (mi.name ILIKE 'Limpeza da Máquina' OR mi.name ILIKE 'Verificar Mangueira de Ar')) OR
+          (mc.frequency = 'quarterly' AND mi.name ILIKE 'Lubrificar Trilho do Carro')
+        )
+      WHEN m.number = 'TRANSFER_CANUDO' THEN
+        mc.frequency = 'weekly' AND
+        (mi.name ILIKE 'Limpeza da Máquina' OR mi.name ILIKE 'Verificar Rolo de Silicone')
+      ELSE TRUE
+    END
+  )
+  -- 3. Excluir itens exclusivos das outras máquinas
+  AND (
+    CASE
+      WHEN mi.name ILIKE 'Verificar Mangueira de Ar' THEN m.number = 'ENCAB_CANUDOS'
+      WHEN mi.name ILIKE 'Verificar Rolo de Silicone' THEN m.number = 'TRANSFER_CANUDO'
+      ELSE TRUE
+    END
+  )
+  -- 4. Excluir limpeza de sensores de máquinas que não são as principais (28, 29, 180, 181, 182)
+  AND (
+    CASE
+      WHEN mi.name ILIKE 'Limpeza dos Sensores de Material' THEN 
+        m.number IN ('28', '29', '180', '181', '182')
+      ELSE TRUE
+    END
+  )
 ),
 latest_logs AS (
   SELECT DISTINCT ON (machine_id, item_id)
